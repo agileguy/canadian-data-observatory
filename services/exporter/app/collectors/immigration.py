@@ -217,6 +217,7 @@ async def _fetch_package_records(package_id: str) -> Optional[List[Dict]]:
     all_records: List[Dict] = []
     offset = 0
     page_size = 1000
+    max_records = 500000
 
     while True:
         records = await fetch_ckan_resource(
@@ -228,6 +229,13 @@ async def _fetch_package_records(package_id: str) -> Optional[List[Dict]]:
         if len(records) < page_size:
             break
         offset += page_size
+        if len(all_records) >= max_records:
+            logger.warning(
+                "Hit max_records safety cap (%d) for package %s",
+                max_records,
+                package_id,
+            )
+            break
 
     logger.info(
         "Fetched %d records from package %s (resource %s)",
@@ -321,33 +329,43 @@ def _aggregate_by_year(
     return agg
 
 
+def _recent_years(years: Dict[str, Any], n: int = 5) -> Dict[str, Any]:
+    """Return only the most recent N years from a year-keyed dict."""
+    sorted_keys = sorted(years.keys(), reverse=True)[:n]
+    return {k: years[k] for k in sorted_keys}
+
+
 def _apply_cached(data: Dict[str, Any]) -> None:
-    """Apply cached immigration data to Prometheus gauges."""
+    """Apply cached immigration data to Prometheus gauges.
+
+    Only emits the most recent 5 years of data per metric to keep
+    cardinality reasonable (~14 provinces x 5 years = 70 series).
+    """
     # Permanent residents by province and year
     pr = data.get("permanent_residents", {})
     for province, years in pr.items():
-        for year, total in years.items():
+        for year, total in _recent_years(years).items():
             permanent_residents_gauge.labels(province=province, year=year).set(total)
 
     # Temporary residents by province and year
     tr = data.get("temporary_residents", {})
     for province, years in tr.items():
-        for year, total in years.items():
+        for year, total in _recent_years(years).items():
             temporary_residents_gauge.labels(province=province, year=year).set(total)
 
     # Refugees by province and year
     ref = data.get("refugees", {})
     for province, years in ref.items():
-        for year, total in years.items():
+        for year, total in _recent_years(years).items():
             refugees_gauge.labels(province=province, year=year).set(total)
 
     # Citizenship grants by year
     cg = data.get("citizenship_grants", {})
-    for year, total in cg.items():
+    for year, total in _recent_years(cg).items():
         citizenship_grants_gauge.labels(year=year).set(total)
 
     # Source countries
     sc = data.get("by_source_country", {})
     for country, years in sc.items():
-        for year, total in years.items():
+        for year, total in _recent_years(years).items():
             source_country_gauge.labels(country=country, year=year).set(total)

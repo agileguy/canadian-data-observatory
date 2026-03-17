@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 from prometheus_client import Gauge
 
 from app.cache import RedisCache
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -38,23 +37,6 @@ last_update_gauge = Gauge(
 # ---------------------------------------------------------------------------
 # Province mappings
 # ---------------------------------------------------------------------------
-PROVINCES = [
-    "Canada",
-    "Newfoundland and Labrador",
-    "Prince Edward Island",
-    "Nova Scotia",
-    "New Brunswick",
-    "Quebec",
-    "Ontario",
-    "Manitoba",
-    "Saskatchewan",
-    "Alberta",
-    "British Columbia",
-    "Yukon",
-    "Northwest Territories",
-    "Nunavut",
-]
-
 PROVINCE_CODES: Dict[str, str] = {
     "Canada": "CA",
     "Newfoundland and Labrador": "NL",
@@ -74,15 +56,6 @@ PROVINCE_CODES: Dict[str, str] = {
 
 # ---------------------------------------------------------------------------
 # StatCan Table 35-10-0026-01: Crime Severity Index and crime rate
-# Key vectors for Canada-level data
-# ---------------------------------------------------------------------------
-CSI_VECTORS: Dict[str, str] = {
-    "total": "v107388556",
-    "violent": "v107388601",
-    "nonviolent": "v107388646",
-    "crime_rate": "v107388691",
-}
-
 # Provincial CSI vectors (total Crime Severity Index)
 PROVINCIAL_CSI_VECTORS: Dict[str, Dict[str, str]] = {
     "CA": {"total": "v107388556", "violent": "v107388601", "nonviolent": "v107388646", "crime_rate": "v107388691"},

@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 from prometheus_client import Gauge
 
 from app.cache import RedisCache
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +228,11 @@ def _fetch_statcan() -> Optional[Dict[str, Any]]:
         for cma, vec in AVG_PRICE_VECTORS.items():
             all_vectors.append(vec)
             vector_map[vec] = ("avg_price", cma, None)
+
+        # Income vectors (for price-to-income ratio)
+        for cma, vec in INCOME_VECTORS.items():
+            all_vectors.append(vec)
+            vector_map[vec] = ("income", cma, None)
 
         # Fetch all vectors in one batch
         df = stats_can.vectors_to_df(all_vectors, periods=1)
