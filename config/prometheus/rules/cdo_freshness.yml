@@ -1,18 +1,18 @@
 groups:
   - name: cdo_data_freshness
     rules:
-      - alert: WeatherDataStale
-        expr: (time() - cdo_weather_last_update) > 3600
+      - alert: ClimateDataStale
+        expr: (time() - cdo_climate_last_update_timestamp) > 3600
         for: 5m
         labels:
           severity: warning
-          domain: weather
+          domain: climate
         annotations:
-          summary: "Weather data is stale"
-          description: "Weather data has not been updated for more than 1 hour. Last update was {{ $value | humanizeDuration }} ago."
+          summary: "Climate data is stale"
+          description: "Climate data has not been updated for more than 1 hour. Last update was {{ $value | humanizeDuration }} ago."
 
       - alert: EconomicDataStale
-        expr: (time() - cdo_economy_last_update) > 2592000
+        expr: (time() - cdo_economy_last_update_timestamp) > 2592000
         for: 5m
         labels:
           severity: warning

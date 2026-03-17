@@ -14,50 +14,54 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Prometheus Gauges for economic indicators
+# Names and labels match the Grafana dashboard queries (SRD convention)
 gdp_gauge = Gauge(
-    "cdo_economy_gdp",
+    "cdo_economy_gdp_millions",
     "Canada GDP at basic prices, seasonally adjusted (millions CAD)",
-    ["frequency"],
+    ["province", "frequency"],
 )
 cpi_gauge = Gauge(
-    "cdo_economy_cpi",
-    "Consumer Price Index, all items (2002=100)",
-    ["geo"],
+    "cdo_economy_cpi_index",
+    "Consumer Price Index (2002=100)",
+    ["province", "basket"],
 )
 unemployment_gauge = Gauge(
-    "cdo_economy_unemployment_rate",
+    "cdo_economy_unemployment_rate_percent",
     "Unemployment rate, seasonally adjusted (%)",
-    ["geo"],
+    ["province"],
 )
 employment_gauge = Gauge(
-    "cdo_economy_employment",
+    "cdo_economy_employment_total",
     "Employment count, seasonally adjusted (thousands)",
-    ["geo"],
+    ["province", "industry"],
 )
 exports_gauge = Gauge(
-    "cdo_economy_exports",
+    "cdo_economy_exports_millions",
     "Total exports of goods (millions CAD)",
+    ["province"],
 )
 imports_gauge = Gauge(
-    "cdo_economy_imports",
+    "cdo_economy_imports_millions",
     "Total imports of goods (millions CAD)",
+    ["province"],
 )
 trade_balance_gauge = Gauge(
-    "cdo_economy_trade_balance",
+    "cdo_economy_trade_balance_millions",
     "Trade balance (exports - imports, millions CAD)",
+    ["province"],
 )
 interest_rate_gauge = Gauge(
-    "cdo_economy_interest_rate",
+    "cdo_economy_interest_rate_percent",
     "Bank of Canada policy interest rate (%)",
-    ["rate_type"],
+    ["type"],
 )
 retail_sales_gauge = Gauge(
-    "cdo_economy_retail_sales",
+    "cdo_economy_retail_sales_millions",
     "Retail trade sales (millions CAD, seasonally adjusted)",
-    ["geo"],
+    ["province"],
 )
 last_update_gauge = Gauge(
-    "cdo_economy_last_update",
+    "cdo_economy_last_update_timestamp",
     "Timestamp of last successful economy data update (unix epoch)",
 )
 
@@ -145,28 +149,30 @@ def _fetch_statcan() -> Optional[Dict[str, Any]]:
 def _apply_cached(data: Dict[str, Any]) -> None:
     """Apply cached data values to Prometheus gauges."""
     if "gdp_monthly" in data:
-        gdp_gauge.labels(frequency="monthly").set(data["gdp_monthly"])
+        gdp_gauge.labels(province="CA", frequency="monthly").set(data["gdp_monthly"])
 
     if "cpi_all_items" in data:
-        cpi_gauge.labels(geo="Canada").set(data["cpi_all_items"])
+        cpi_gauge.labels(province="CA", basket="All-items").set(data["cpi_all_items"])
 
     if "unemployment_rate" in data:
-        unemployment_gauge.labels(geo="Canada").set(data["unemployment_rate"])
+        unemployment_gauge.labels(province="CA").set(data["unemployment_rate"])
 
     if "employment" in data:
-        employment_gauge.labels(geo="Canada").set(data["employment"])
+        employment_gauge.labels(province="CA", industry="Total").set(data["employment"])
 
     if "exports_total" in data:
-        exports_gauge.set(data["exports_total"])
+        exports_gauge.labels(province="CA").set(data["exports_total"])
 
     if "imports_total" in data:
-        imports_gauge.set(data["imports_total"])
+        imports_gauge.labels(province="CA").set(data["imports_total"])
 
     if "exports_total" in data and "imports_total" in data:
-        trade_balance_gauge.set(data["exports_total"] - data["imports_total"])
+        trade_balance_gauge.labels(province="CA").set(
+            data["exports_total"] - data["imports_total"]
+        )
 
     if "interest_rate_target" in data:
-        interest_rate_gauge.labels(rate_type="target").set(data["interest_rate_target"])
+        interest_rate_gauge.labels(type="overnight").set(data["interest_rate_target"])
 
     if "retail_sales" in data:
-        retail_sales_gauge.labels(geo="Canada").set(data["retail_sales"])
+        retail_sales_gauge.labels(province="CA").set(data["retail_sales"])

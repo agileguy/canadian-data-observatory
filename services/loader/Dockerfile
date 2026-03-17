@@ -16,4 +16,7 @@ RUN chmod 0644 /etc/cron.d/cdo-loader && crontab /etc/cron.d/cdo-loader
 
 COPY app/ ./app/
 
-CMD ["cron", "-f"]
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+CMD ["/entrypoint.sh"]

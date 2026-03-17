@@ -14,7 +14,7 @@ from prometheus_client import (
 
 from app.cache import RedisCache
 from app.config import settings
-from app.collectors import economy
+from app.collectors import economy, climate
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,11 @@ async def _collect_loop():
             await economy.fetch_and_update(cache)
         except Exception:
             logger.exception("Economy collector failed")
+
+        try:
+            await climate.fetch_and_update(cache)
+        except Exception:
+            logger.exception("Climate collector failed")
 
         # Sleep for 5 minutes between collection cycles
         await asyncio.sleep(300)

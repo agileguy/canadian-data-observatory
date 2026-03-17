@@ -5,5 +5,4 @@ httpx==0.28.0
 redis==5.2.0
 pandas==2.2.0
 stats-can==2.5.0
-ckanapi==4.8
 python-dateutil==2.9.0

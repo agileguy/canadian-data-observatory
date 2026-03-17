@@ -12,6 +12,7 @@ from typing import Any, Optional
 import httpx
 from prometheus_client import Gauge
 
+from app.cache import RedisCache
 from app.parsers.eccc import parse_wfs_response
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,8 @@ WFS_PARAMS = {
     "count": "500",
 }
 
-# Redis cache key and TTL (seconds)
-CACHE_KEY = "cdo:climate:wfs_response"
+# Redis cache key (no cdo: prefix -- RedisCache adds it)
+CACHE_KEY = "climate:wfs_response"
 CACHE_TTL = 900  # 15 minutes
 
 # ---------------------------------------------------------------------------
@@ -152,24 +153,22 @@ def _safe_float(value: Any) -> Optional[float]:
 # Core collector
 # ---------------------------------------------------------------------------
 
-async def fetch_and_update(redis_client=None) -> None:
+async def fetch_and_update(cache: RedisCache) -> None:
     """Fetch current conditions from ECCC and update Prometheus gauges.
 
-    Uses Redis for caching the raw WFS response to avoid hammering the API.
-    Falls back to a direct fetch if Redis is unavailable.
+    Uses RedisCache for caching the raw WFS response to avoid hammering
+    the API. Falls back to a direct fetch if cache is empty.
     """
     geojson_data = None
 
     # Try cache first
-    if redis_client is not None:
-        try:
-            cached = await redis_client.get(CACHE_KEY)
-            if cached:
-                import json
-                geojson_data = json.loads(cached)
-                logger.debug("Climate data loaded from Redis cache")
-        except Exception as exc:
-            logger.warning("Redis cache read failed: %s", exc)
+    try:
+        cached = await cache.get(CACHE_KEY)
+        if cached:
+            geojson_data = cached
+            logger.debug("Climate data loaded from Redis cache")
+    except Exception as exc:
+        logger.warning("Redis cache read failed: %s", exc)
 
     # Fetch from API if no cache hit
     if geojson_data is None:
@@ -179,13 +178,11 @@ async def fetch_and_update(redis_client=None) -> None:
             return
 
         # Store in cache
-        if redis_client is not None:
-            try:
-                import json
-                await redis_client.set(CACHE_KEY, json.dumps(geojson_data), ex=CACHE_TTL)
-                logger.debug("Climate data cached in Redis (TTL=%ds)", CACHE_TTL)
-            except Exception as exc:
-                logger.warning("Redis cache write failed: %s", exc)
+        try:
+            await cache.set(CACHE_KEY, geojson_data, ttl=CACHE_TTL)
+            logger.debug("Climate data cached in Redis (TTL=%ds)", CACHE_TTL)
+        except Exception as exc:
+            logger.warning("Redis cache write failed: %s", exc)
 
     # Parse and update gauges
     stations = parse_wfs_response(geojson_data)

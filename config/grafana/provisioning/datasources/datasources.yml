@@ -3,6 +3,7 @@ apiVersion: 1
 datasources:
   - name: Prometheus
     type: prometheus
+    uid: prometheus
     access: proxy
     url: http://prometheus:9090
     isDefault: true
@@ -12,12 +13,13 @@ datasources:
 
   - name: PostgreSQL
     type: postgres
+    uid: postgres
     access: proxy
     url: postgres:5432
     database: cdo
     user: cdo
     secureJsonData:
-      password: cdo_secret
+      password: $__env{CDO_POSTGRES_PASSWORD}
     jsonData:
       sslmode: disable
       maxOpenConns: 10
