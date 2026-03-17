@@ -1,0 +1,332 @@
+{
+  "uid": "cdo-climate",
+  "title": "Climate and Weather",
+  "description": "Real-time weather conditions from Environment and Climate Change Canada",
+  "tags": ["cdo", "climate", "weather", "canada"],
+  "timezone": "America/Toronto",
+  "editable": true,
+  "refresh": "15m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "city",
+        "type": "custom",
+        "label": "City",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "Toronto", "value": "Toronto", "selected": false },
+          { "text": "Vancouver", "value": "Vancouver", "selected": false },
+          { "text": "Montreal", "value": "Montreal", "selected": false },
+          { "text": "Calgary", "value": "Calgary", "selected": false },
+          { "text": "Edmonton", "value": "Edmonton", "selected": false },
+          { "text": "Ottawa", "value": "Ottawa", "selected": false },
+          { "text": "Winnipeg", "value": "Winnipeg", "selected": false },
+          { "text": "Halifax", "value": "Halifax", "selected": false }
+        ],
+        "query": "Toronto,Vancouver,Montreal,Calgary,Edmonton,Ottawa,Winnipeg,Halifax"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Current Temperature Map",
+      "description": "Station locations colored by current temperature",
+      "type": "geomap",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_climate_temperature_celsius",
+          "legendFormat": "{{ city }}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-RdYlBu"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "dark-blue", "value": null },
+              { "color": "blue", "value": -30 },
+              { "color": "light-blue", "value": -15 },
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 15 },
+              { "color": "orange", "value": 25 },
+              { "color": "red", "value": 35 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 56,
+          "lon": -96,
+          "zoom": 3.5
+        },
+        "basemap": {
+          "type": "default",
+          "name": "Layer 0"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Stations",
+            "config": {
+              "showLegend": true,
+              "style": {
+                "size": {
+                  "fixed": 8
+                },
+                "color": {
+                  "field": "Value",
+                  "mode": "continuous-RdYlBu"
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg"
+                },
+                "opacity": 0.9,
+                "text": {
+                  "field": "city",
+                  "mode": "field"
+                }
+              },
+              "location": {
+                "mode": "lookup",
+                "lookup": "city",
+                "gazetteer": "public/gazetteer/canada-cities.json"
+              }
+            }
+          }
+        ],
+        "controls": {
+          "showZoom": true,
+          "showAttribution": true,
+          "showScale": true,
+          "mouseWheelZoom": true
+        },
+        "tooltip": {
+          "mode": "details"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Temperature by City",
+      "description": "Temperature trends over time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_climate_temperature_celsius{city=~\"$city\"}",
+          "legendFormat": "{{ city }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "axisLabel": "Temperature (C)"
+          },
+          "unit": "celsius",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 20 },
+              { "color": "red", "value": 35 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "table", "placement": "right", "calcs": ["lastNotNull", "min", "max"] }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Wind Speed",
+      "description": "Current wind speed by city",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_climate_wind_speed_kmh{city=~\"$city\"}",
+          "legendFormat": "{{ city }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-GrYlRd" },
+          "unit": "velocitykmh",
+          "decimals": 0,
+          "min": 0,
+          "max": 120,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "orange", "value": 60 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Humidity",
+      "description": "Current relative humidity by city",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_climate_humidity_percent{city=~\"$city\"}",
+          "legendFormat": "{{ city }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-blues" },
+          "unit": "humidity",
+          "decimals": 0,
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "light-blue", "value": null },
+              { "color": "blue", "value": 60 },
+              { "color": "dark-blue", "value": 80 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 5,
+      "title": "Atmospheric Pressure",
+      "description": "Barometric pressure trends",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_climate_pressure_kpa{city=~\"$city\"}",
+          "legendFormat": "{{ city }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 5,
+            "spanNulls": true,
+            "axisLabel": "Pressure (kPa)"
+          },
+          "unit": "pressurekpa",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Precipitation",
+      "description": "Precipitation by city",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_climate_precipitation_mm{city=~\"$city\"}",
+          "legendFormat": "{{ city }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "lengthmm",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "light-blue", "value": null },
+              { "color": "blue", "value": 10 },
+              { "color": "dark-blue", "value": 25 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "vertical",
+        "barWidth": 0.8,
+        "groupWidth": 0.7,
+        "showValue": "auto",
+        "stacking": "none",
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
