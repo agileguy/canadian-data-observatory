@@ -73,9 +73,9 @@ PROVINCE_CODES: Dict[str, str] = {
 # "Total Crime Severity Index", "Violent Crime Severity Index",
 # "Non-violent Crime Severity Index", "Total crime rate"
 CSI_STAT_MAP: Dict[str, str] = {
-    "Total Crime Severity Index": "total",
-    "Violent Crime Severity Index": "violent",
-    "Non-violent Crime Severity Index": "nonviolent",
+    "Crime severity index": "total",
+    "Violent crime severity index": "violent",
+    "Non-violent crime severity index": "nonviolent",
 }
 
 
@@ -116,14 +116,23 @@ def _fetch_statcan() -> Optional[Dict[str, Any]]:
     """Synchronous fetch from Statistics Canada using CSV bulk download.
 
     Downloads the CSI table zip, extracts the CSV, and parses CSI values
-    by province. Runs in a thread executor.
+    by province. Streams to a temp file to avoid MemoryError on large CSVs.
+    Runs in a thread executor.
     """
+    import tempfile
+    import os
+
+    tmp_path = None
     try:
         logger.debug("Downloading crime CSV from %s", CSI_CSV_URL)
-        resp = httpx.get(CSI_CSV_URL, timeout=120.0, follow_redirects=True)
-        resp.raise_for_status()
+        tmp_path = tempfile.mktemp(suffix=".zip")
+        with httpx.stream("GET", CSI_CSV_URL, timeout=120.0, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            with open(tmp_path, "wb") as f:
+                for chunk in resp.iter_bytes(8192):
+                    f.write(chunk)
 
-        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        with zipfile.ZipFile(tmp_path) as zf:
             csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
             if not csv_names:
                 logger.error("No CSV file found in crime zip")
@@ -178,6 +187,9 @@ def _fetch_statcan() -> Optional[Dict[str, Any]]:
     except Exception:
         logger.exception("Failed to parse crime CSV")
         return None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def _apply_cached(data: Dict[str, Any]) -> None:
