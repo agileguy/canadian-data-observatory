@@ -118,19 +118,71 @@ async def fetch_and_update(cache: RedisCache) -> None:
         logger.exception("Failed to fetch economy data from StatCan")
 
 
-def _download_csv(url: str) -> Optional[str]:
-    """Download a StatCan CSV zip and return the extracted CSV text."""
+def _download_and_extract_latest(
+    url: str,
+    geo_filter: str = "Canada",
+    member_filter: Optional[str] = None,
+    member_field: Optional[str] = None,
+) -> Optional[float]:
+    """Download a StatCan CSV zip and extract the latest VALUE for a GEO.
+
+    Streams the zip to a temp file to avoid memory issues with large CSVs.
+    Reads the CSV line-by-line to keep memory usage constant.
+    """
+    import tempfile
+    import os
+
+    tmp_path = None
     try:
         logger.debug("Downloading CSV from %s", url)
-        resp = httpx.get(url, timeout=120.0, follow_redirects=True)
-        resp.raise_for_status()
+        # Stream download to temp file
+        tmp_path = tempfile.mktemp(suffix=".zip")
+        with httpx.stream("GET", url, timeout=120.0, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            with open(tmp_path, "wb") as f:
+                for chunk in resp.iter_bytes(8192):
+                    f.write(chunk)
 
-        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        with zipfile.ZipFile(tmp_path) as zf:
             csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
             if not csv_names:
                 logger.error("No CSV file found in zip from %s", url)
                 return None
-            return zf.read(csv_names[0]).decode("utf-8-sig")
+
+            best_date = ""
+            best_value: Optional[float] = None
+
+            with zf.open(csv_names[0]) as csv_file:
+                text_stream = io.TextIOWrapper(csv_file, encoding="utf-8-sig")
+                reader = csv.DictReader(text_stream)
+
+                for row in reader:
+                    geo = row.get("GEO", "").strip()
+                    if geo != geo_filter:
+                        continue
+
+                    if member_filter and member_field:
+                        field_val = row.get(member_field, "").strip()
+                        if member_filter.lower() not in field_val.lower():
+                            continue
+
+                    ref_date = row.get("REF_DATE", "").strip()
+                    value_str = row.get("VALUE", "").strip()
+                    if not value_str:
+                        continue
+
+                    try:
+                        value = float(value_str)
+                    except ValueError:
+                        continue
+
+                    if ref_date > best_date:
+                        best_date = ref_date
+                        best_value = value
+
+            if best_value is not None:
+                logger.debug("Extracted value %s (date %s) from %s", best_value, best_date, url)
+            return best_value
 
     except httpx.HTTPError as exc:
         logger.error("HTTP error downloading %s: %s", url, exc)
@@ -138,185 +190,88 @@ def _download_csv(url: str) -> Optional[str]:
     except Exception:
         logger.exception("Failed to download/extract CSV from %s", url)
         return None
-
-
-def _latest_canada_value(
-    csv_text: str,
-    member_filter: Optional[str] = None,
-    member_field: Optional[str] = None,
-) -> Optional[float]:
-    """Extract the latest VALUE for GEO='Canada' from a StatCan CSV.
-
-    Optionally filter by a member/item field containing a substring.
-    Returns the most recent value (by REF_DATE) or None.
-    """
-    reader = csv.DictReader(io.StringIO(csv_text))
-    best_date = ""
-    best_value: Optional[float] = None
-
-    for row in reader:
-        geo = row.get("GEO", "").strip()
-        if geo != "Canada":
-            continue
-
-        # Apply optional member filter
-        if member_filter and member_field:
-            field_val = row.get(member_field, "").strip()
-            if member_filter.lower() not in field_val.lower():
-                continue
-
-        ref_date = row.get("REF_DATE", "").strip()
-        value_str = row.get("VALUE", "").strip()
-        if not value_str:
-            continue
-
-        try:
-            value = float(value_str)
-        except ValueError:
-            continue
-
-        if ref_date > best_date:
-            best_date = ref_date
-            best_value = value
-
-    return best_value
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def _fetch_statcan() -> Optional[Dict[str, Any]]:
     """Synchronous fetch from Statistics Canada using CSV bulk download.
 
-    Downloads zip files for each table, extracts CSVs, and parses
-    the latest Canada-level values. Runs in a thread executor.
+    Downloads zip files for each table, streams CSVs line-by-line to avoid
+    memory issues with large tables. Runs in a thread executor.
     """
     results: Dict[str, Any] = {}
 
     # --- GDP (Table 36-10-0434-01) ---
-    csv_text = _download_csv(STATCAN_TABLES["gdp"])
-    if csv_text:
-        val = _latest_canada_value(
-            csv_text,
-            member_filter="Gross domestic product at market prices",
-            member_field="North American Industry Classification System (NAICS)",
-        )
-        if val is not None:
-            results["gdp_monthly"] = val
-            logger.debug("GDP = %s", val)
+    val = _download_and_extract_latest(
+        STATCAN_TABLES["gdp"],
+        member_filter="Gross domestic product at market prices",
+        member_field="North American Industry Classification System (NAICS)",
+    )
+    if val is not None:
+        results["gdp_monthly"] = val
 
     # --- CPI (Table 18-10-0004-01) ---
-    csv_text = _download_csv(STATCAN_TABLES["cpi"])
-    if csv_text:
-        val = _latest_canada_value(
-            csv_text,
-            member_filter="All-items",
-            member_field="Products and product groups",
-        )
-        if val is not None:
-            results["cpi_all_items"] = val
-            logger.debug("CPI = %s", val)
+    val = _download_and_extract_latest(
+        STATCAN_TABLES["cpi"],
+        member_filter="All-items",
+        member_field="Products and product groups",
+    )
+    if val is not None:
+        results["cpi_all_items"] = val
 
     # --- Unemployment (Table 14-10-0287-01) ---
-    csv_text = _download_csv(STATCAN_TABLES["unemployment"])
-    if csv_text:
-        # Parse unemployment rate and employment count
-        reader = csv.DictReader(io.StringIO(csv_text))
-        best_date = ""
-        unemp_rate: Optional[float] = None
-        employment: Optional[float] = None
+    val = _download_and_extract_latest(
+        STATCAN_TABLES["unemployment"],
+        member_filter="Unemployment rate",
+        member_field="Labour force characteristics",
+    )
+    if val is not None:
+        results["unemployment_rate"] = val
 
-        for row in reader:
-            geo = row.get("GEO", "").strip()
-            if geo != "Canada":
-                continue
-
-            ref_date = row.get("REF_DATE", "").strip()
-            value_str = row.get("VALUE", "").strip()
-            estimate = row.get("Labour force characteristics", "").strip()
-
-            if not value_str or ref_date < best_date:
-                continue
-
-            try:
-                value = float(value_str)
-            except ValueError:
-                continue
-
-            if ref_date > best_date:
-                best_date = ref_date
-
-            if "Unemployment rate" in estimate:
-                unemp_rate = value
-            elif estimate == "Employment":
-                employment = value
-
-        if unemp_rate is not None:
-            results["unemployment_rate"] = unemp_rate
-            logger.debug("Unemployment rate = %s", unemp_rate)
-        if employment is not None:
-            results["employment"] = employment
-            logger.debug("Employment = %s", employment)
+    emp_val = _download_and_extract_latest(
+        STATCAN_TABLES["unemployment"],
+        member_filter="Employment",
+        member_field="Labour force characteristics",
+    )
+    if emp_val is not None:
+        results["employment"] = emp_val
 
     # --- Trade (Table 12-10-0011-01) ---
-    csv_text = _download_csv(STATCAN_TABLES["trade"])
-    if csv_text:
-        reader = csv.DictReader(io.StringIO(csv_text))
-        best_date = ""
-        exports_val: Optional[float] = None
-        imports_val: Optional[float] = None
+    exp_val = _download_and_extract_latest(
+        STATCAN_TABLES["trade"],
+        member_filter="export",
+        member_field="Trade",
+    )
+    if exp_val is not None:
+        results["exports_total"] = exp_val
 
-        for row in reader:
-            geo = row.get("GEO", "").strip()
-            if geo != "Canada":
-                continue
-
-            ref_date = row.get("REF_DATE", "").strip()
-            value_str = row.get("VALUE", "").strip()
-            trade_field = row.get("Trade", "").strip()
-
-            if not value_str:
-                continue
-
-            try:
-                value = float(value_str)
-            except ValueError:
-                continue
-
-            if ref_date >= best_date:
-                best_date = ref_date
-                if "export" in trade_field.lower():
-                    exports_val = value
-                elif "import" in trade_field.lower():
-                    imports_val = value
-
-        if exports_val is not None:
-            results["exports_total"] = exports_val
-            logger.debug("Exports = %s", exports_val)
-        if imports_val is not None:
-            results["imports_total"] = imports_val
-            logger.debug("Imports = %s", imports_val)
+    imp_val = _download_and_extract_latest(
+        STATCAN_TABLES["trade"],
+        member_filter="import",
+        member_field="Trade",
+    )
+    if imp_val is not None:
+        results["imports_total"] = imp_val
 
     # --- Retail (Table 20-10-0008-01) ---
-    csv_text = _download_csv(STATCAN_TABLES["retail"])
-    if csv_text:
-        val = _latest_canada_value(
-            csv_text,
-            member_filter="Retail trade",
-            member_field="North American Industry Classification System (NAICS)",
-        )
-        if val is not None:
-            results["retail_sales"] = val
-            logger.debug("Retail sales = %s", val)
+    val = _download_and_extract_latest(
+        STATCAN_TABLES["retail"],
+        member_filter="Retail trade",
+        member_field="North American Industry Classification System (NAICS)",
+    )
+    if val is not None:
+        results["retail_sales"] = val
 
     # --- Interest Rates (Table 10-10-0122-01) ---
-    csv_text = _download_csv(STATCAN_TABLES["interest_rates"])
-    if csv_text:
-        val = _latest_canada_value(
-            csv_text,
-            member_filter="Bank rate",
-            member_field="Financial market statistics",
-        )
-        if val is not None:
-            results["interest_rate_target"] = val
-            logger.debug("Interest rate = %s", val)
+    val = _download_and_extract_latest(
+        STATCAN_TABLES["interest_rates"],
+        member_filter="Bank rate",
+        member_field="Financial market statistics",
+    )
+    if val is not None:
+        results["interest_rate_target"] = val
 
     return results if results else None
 
