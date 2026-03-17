@@ -87,9 +87,38 @@ def _parse_routes(zip_bytes: bytes) -> List[Dict[str, str]]:
 
 
 def _ensure_schema(conn) -> None:
-    """Create the transit schema and tables if they don't exist."""
+    """Create the transit schema and tables if they don't exist.
+
+    Handles migration from older schema that used 'agency' column
+    instead of 'city'.
+    """
     with conn.cursor() as cur:
         cur.execute("CREATE SCHEMA IF NOT EXISTS transit")
+
+        # Check if stops table exists and has 'agency' instead of 'city'
+        cur.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'transit' AND table_name = 'stops'
+        """)
+        existing_cols = {r[0] for r in cur.fetchall()}
+
+        if existing_cols and "agency" in existing_cols and "city" not in existing_cols:
+            # Migrate: rename 'agency' -> 'city'
+            logger.info("Migrating transit.stops: renaming 'agency' to 'city'")
+            cur.execute("ALTER TABLE transit.stops RENAME COLUMN agency TO city")
+            conn.commit()
+
+        # Same check for routes
+        cur.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'transit' AND table_name = 'routes'
+        """)
+        route_cols = {r[0] for r in cur.fetchall()}
+
+        if route_cols and "agency" in route_cols and "city" not in route_cols:
+            logger.info("Migrating transit.routes: renaming 'agency' to 'city'")
+            cur.execute("ALTER TABLE transit.routes RENAME COLUMN agency TO city")
+            conn.commit()
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS transit.stops (

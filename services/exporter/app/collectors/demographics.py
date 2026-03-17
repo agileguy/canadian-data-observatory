@@ -138,9 +138,8 @@ def _fetch_statcan_csv() -> Optional[Dict[str, Any]]:
         # Parse CSV — find latest population estimates per province
         reader = csv.DictReader(io.StringIO(csv_data))
 
-        # Track latest values per province
-        populations: Dict[str, float] = {}
-        latest_ref_date: Dict[str, str] = {}
+        # Track all values per province keyed by ref_date for growth calc
+        all_values: Dict[str, Dict[str, float]] = {}
 
         for row in reader:
             geo = row.get("GEO", "").strip()
@@ -160,23 +159,38 @@ def _fetch_statcan_csv() -> Optional[Dict[str, Any]]:
             except ValueError:
                 continue
 
-            # Keep the most recent observation per province
-            if code not in latest_ref_date or ref_date > latest_ref_date[code]:
-                latest_ref_date[code] = ref_date
-                populations[code] = value
+            all_values.setdefault(code, {})[ref_date] = value
 
-        if not populations:
+        if not all_values:
             logger.warning("No population data parsed from CSV")
             return None
 
+        # Extract latest population per province
+        populations: Dict[str, float] = {}
+        for code, date_vals in all_values.items():
+            latest_date = max(date_vals.keys())
+            populations[code] = date_vals[latest_date]
+
         results: Dict[str, Any] = {"populations": populations}
 
-        # Compute simple growth rates from two most recent periods
-        # (not available directly in this approach, but population
-        # values are the primary use case)
+        # Compute growth rates from the two most recent periods per province
+        growth_rates: Dict[str, float] = {}
+        for code, date_vals in all_values.items():
+            sorted_dates = sorted(date_vals.keys())
+            if len(sorted_dates) >= 2:
+                prev_val = date_vals[sorted_dates[-2]]
+                curr_val = date_vals[sorted_dates[-1]]
+                if prev_val > 0:
+                    rate = ((curr_val - prev_val) / prev_val) * 100.0
+                    growth_rates[code] = round(rate, 4)
+
+        if growth_rates:
+            results["growth_rates"] = growth_rates
+
         logger.info(
-            "Parsed population data for %d provinces/territories",
+            "Parsed population data for %d provinces/territories, %d growth rates",
             len(populations),
+            len(growth_rates),
         )
         return results
 

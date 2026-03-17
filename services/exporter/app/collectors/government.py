@@ -206,17 +206,35 @@ async def _fetch_grant_aggregates(
     offset = 0
     batch_size = 1000
     max_records = 10000
+    logged_keys = False
 
     while offset < max_records:
         records = await fetch_ckan_resource(resource_id, limit=batch_size, offset=offset)
         if not records:
             break
 
+        if not logged_keys and records:
+            logger.info("Grant record sample keys: %s", list(records[0].keys()))
+            logged_keys = True
+
         for rec in records:
             fiscal_year = _extract_fiscal_year(rec)
             if fiscal_year and fiscal_year in allowed_years:
-                value = _parse_dollar_value(rec.get("value") or rec.get("total") or rec.get("agreement_value") or "0")
-                totals[fiscal_year] += value
+                # Try many possible column names for the grant amount
+                raw_value = (
+                    rec.get("value")
+                    or rec.get("total")
+                    or rec.get("agreement_value")
+                    or rec.get("total_funding")
+                    or rec.get("amount")
+                    or rec.get("amendment_value")
+                    or rec.get("original_value")
+                    or rec.get("contract_value")
+                    or rec.get("total_value")
+                    or rec.get("agreement_start_date_value")
+                    or "0"
+                )
+                totals[fiscal_year] += _parse_dollar_value(raw_value)
 
         if len(records) < batch_size:
             break

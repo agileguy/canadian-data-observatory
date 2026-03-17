@@ -120,6 +120,30 @@ async def fetch_and_update(cache: RedisCache) -> None:
         logger.exception("Failed to fetch immigration data from IRCC")
 
 
+def _detect_field(records: List[Dict], candidates: List[str]) -> str:
+    """Return the first field name from *candidates* that exists in the records.
+
+    Falls back to the first candidate if none are found (the aggregation
+    will simply produce an empty result rather than crashing).
+    """
+    if not records:
+        return candidates[0]
+    sample = records[0]
+    for c in candidates:
+        if c in sample:
+            return c
+    # Try case-insensitive match
+    lower_keys = {k.lower(): k for k in sample.keys()}
+    for c in candidates:
+        if c.lower() in lower_keys:
+            return lower_keys[c.lower()]
+    logger.warning(
+        "None of %s found in record keys %s; using '%s'",
+        candidates, list(sample.keys())[:10], candidates[0],
+    )
+    return candidates[0]
+
+
 async def _fetch_all_ircc() -> Optional[Dict[str, Any]]:
     """Fetch data from all four IRCC CKAN packages in parallel."""
     results: Dict[str, Any] = {}
@@ -147,41 +171,85 @@ async def _fetch_all_ircc() -> Optional[Dict[str, Any]]:
     aggregated: Dict[str, Any] = {}
 
     if "permanent_residents" in results:
+        province_field = _detect_field(
+            results["permanent_residents"],
+            ["Province/Territory of intended destination", "Province/Territory",
+             "Province / Territory of Intended Destination", "province_territory"],
+        )
+        year_field = _detect_field(
+            results["permanent_residents"], ["Year", "year", "YEAR"]
+        )
+        value_field = _detect_field(
+            results["permanent_residents"], ["Value", "value", "VALUE", "Persons"]
+        )
         aggregated["permanent_residents"] = _aggregate_by_province_year(
             results["permanent_residents"],
-            province_field="Province/Territory of intended destination",
-            year_field="Year",
-            value_field="Value",
+            province_field=province_field,
+            year_field=year_field,
+            value_field=value_field,
+        )
+        country_field = _detect_field(
+            results["permanent_residents"],
+            ["Country of citizenship", "Country of Citizenship",
+             "country_of_citizenship", "Source country"],
         )
         aggregated["by_source_country"] = _aggregate_by_field_year(
             results["permanent_residents"],
-            field="Country of citizenship",
-            year_field="Year",
-            value_field="Value",
+            field=country_field,
+            year_field=year_field,
+            value_field=value_field,
             top_n=15,
         )
 
     if "temporary_residents" in results:
+        province_field = _detect_field(
+            results["temporary_residents"],
+            ["Province/Territory", "Province/Territory of temporary residence",
+             "Province / Territory", "province_territory"],
+        )
+        year_field = _detect_field(
+            results["temporary_residents"], ["Year", "year", "YEAR"]
+        )
+        value_field = _detect_field(
+            results["temporary_residents"], ["Value", "value", "VALUE", "Persons"]
+        )
         aggregated["temporary_residents"] = _aggregate_by_province_year(
             results["temporary_residents"],
-            province_field="Province/Territory",
-            year_field="Year",
-            value_field="Value",
+            province_field=province_field,
+            year_field=year_field,
+            value_field=value_field,
         )
 
     if "refugee_claimants" in results:
+        province_field = _detect_field(
+            results["refugee_claimants"],
+            ["Province/Territory of claim", "Province/Territory",
+             "Province / Territory of Claim", "province_territory"],
+        )
+        year_field = _detect_field(
+            results["refugee_claimants"], ["Year", "year", "YEAR"]
+        )
+        value_field = _detect_field(
+            results["refugee_claimants"], ["Value", "value", "VALUE", "Persons"]
+        )
         aggregated["refugees"] = _aggregate_by_province_year(
             results["refugee_claimants"],
-            province_field="Province/Territory of claim",
-            year_field="Year",
-            value_field="Value",
+            province_field=province_field,
+            year_field=year_field,
+            value_field=value_field,
         )
 
     if "citizenship_grants" in results:
+        year_field = _detect_field(
+            results["citizenship_grants"], ["Year", "year", "YEAR"]
+        )
+        value_field = _detect_field(
+            results["citizenship_grants"], ["Value", "value", "VALUE", "Persons"]
+        )
         aggregated["citizenship_grants"] = _aggregate_by_year(
             results["citizenship_grants"],
-            year_field="Year",
-            value_field="Value",
+            year_field=year_field,
+            value_field=value_field,
         )
 
     return aggregated if aggregated else None
@@ -193,34 +261,42 @@ async def _fetch_package_records(package_id: str) -> Optional[List[Dict]]:
     if not dataset:
         return None
 
-    # Find the first datastore-active CSV resource
+    # Find the first datastore-active CSV resource (prefer CSV over XLSX)
     resources = dataset.get("resources", [])
     csv_resource = None
+
+    # Priority 1: datastore-active CSV
     for res in resources:
         fmt = (res.get("format") or "").upper()
-        if fmt in ("CSV", "XLSX") and res.get("datastore_active", False):
+        if fmt == "CSV" and res.get("datastore_active", False):
             csv_resource = res
             break
 
-    # Fallback: first resource with datastore_active
+    # Priority 2: any datastore-active resource
     if csv_resource is None:
         for res in resources:
             if res.get("datastore_active", False):
                 csv_resource = res
                 break
 
+    # Priority 3: downloadable CSV (not XLSX — we can't parse XLSX without openpyxl)
     if csv_resource is None:
-        # Fallback: download CSV/XLSX resource directly if not datastore-active
         for res in resources:
             fmt = (res.get("format") or "").upper()
-            if fmt in ("CSV", "XLSX"):
+            if fmt == "CSV":
                 csv_resource = res
                 break
 
+    # Priority 4: XLSX — skip with warning (requires openpyxl which is not installed)
     if csv_resource is None:
-        logger.warning(
-            "No suitable resource found in package %s", package_id
-        )
+        has_xlsx = any((res.get("format") or "").upper() == "XLSX" for res in resources)
+        if has_xlsx:
+            logger.warning(
+                "Package %s only has XLSX resources; skipping (openpyxl not installed)",
+                package_id,
+            )
+        else:
+            logger.warning("No suitable resource found in package %s", package_id)
         return None
 
     # If not datastore-active, try downloading the CSV directly

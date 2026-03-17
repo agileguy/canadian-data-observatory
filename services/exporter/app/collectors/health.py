@@ -228,8 +228,13 @@ def _parse_health_expenditure() -> Optional[Dict[str, float]]:
         reader = csv.DictReader(io.StringIO(csv_text))
         spending: Dict[str, float] = {}
         latest_date: Dict[str, str] = {}
+        logged_columns = False
 
         for row in reader:
+            if not logged_columns:
+                logger.info("Health expenditure CSV columns: %s", list(row.keys()))
+                logged_columns = True
+
             geo = row.get("GEO", "").strip()
             ref_date = row.get("REF_DATE", "").strip()
             value_str = row.get("VALUE", "").strip()
@@ -238,15 +243,22 @@ def _parse_health_expenditure() -> Optional[Dict[str, float]]:
                 continue
 
             # Look for per-capita or total health expenditure rows
-            # Column names vary by table version
-            use_of_funds = row.get("Use of funds", "").strip()
-            if not use_of_funds:
-                use_of_funds = row.get(
-                    "Health expenditure category", ""
-                ).strip()
+            # Column names vary by table version — try several possibilities
+            use_of_funds = ""
+            for col_name in (
+                "Use of funds",
+                "Health expenditure category",
+                "Characteristics",
+                "Health spending category",
+            ):
+                val = row.get(col_name, "").strip()
+                if val:
+                    use_of_funds = val
+                    break
 
-            # Accept total/overall spending rows
-            if "total" not in use_of_funds.lower():
+            # Accept total/overall spending rows, or if no category column
+            # exists (single-series table), accept all rows
+            if use_of_funds and "total" not in use_of_funds.lower():
                 continue
 
             code = GEO_TO_CODE[geo]

@@ -123,6 +123,7 @@ def _download_and_extract_latest(
     geo_filter: str = "Canada",
     member_filter: Optional[str] = None,
     member_field: Optional[str] = None,
+    timeout: float = 120.0,
 ) -> Optional[float]:
     """Download a StatCan CSV zip and extract the latest VALUE for a GEO.
 
@@ -137,7 +138,7 @@ def _download_and_extract_latest(
         logger.debug("Downloading CSV from %s", url)
         # Stream download to temp file
         tmp_path = tempfile.mktemp(suffix=".zip")
-        with httpx.stream("GET", url, timeout=120.0, follow_redirects=True) as resp:
+        with httpx.stream("GET", url, timeout=timeout, follow_redirects=True) as resp:
             resp.raise_for_status()
             with open(tmp_path, "wb") as f:
                 for chunk in resp.iter_bytes(8192):
@@ -206,7 +207,7 @@ def _fetch_statcan() -> Optional[Dict[str, Any]]:
     # --- GDP (Table 36-10-0434-01) ---
     val = _download_and_extract_latest(
         STATCAN_TABLES["gdp"],
-        member_filter="Gross domestic product at market prices",
+        member_filter="All industries",
         member_field="North American Industry Classification System (NAICS)",
     )
     if val is not None:
@@ -265,11 +266,21 @@ def _fetch_statcan() -> Optional[Dict[str, Any]]:
         results["retail_sales"] = val
 
     # --- Interest Rates (Table 10-10-0122-01) ---
+    # Try "Bank rate" first; fall back to "overnight" if not found.
+    # The table can be large, so we use a longer timeout via the helper.
     val = _download_and_extract_latest(
         STATCAN_TABLES["interest_rates"],
         member_filter="Bank rate",
         member_field="Financial market statistics",
+        timeout=180.0,
     )
+    if val is None:
+        val = _download_and_extract_latest(
+            STATCAN_TABLES["interest_rates"],
+            member_filter="overnight money market",
+            member_field="Financial market statistics",
+            timeout=180.0,
+        )
     if val is not None:
         results["interest_rate_target"] = val
 
