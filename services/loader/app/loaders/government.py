@@ -165,7 +165,6 @@ def load_government_contracts() -> int:
                     row.get("contract_value")
                     or row.get("original_value")
                     or row.get("Contract Value")
-                    or row.get("contract_period_start")
                 )
 
                 contract_title = (
@@ -201,6 +200,7 @@ def load_government_contracts() -> int:
                         f"-{contract_value or 0}"
                     )[:50]
 
+                cur.execute("SAVEPOINT row_sp")
                 try:
                     cur.execute(
                         """
@@ -223,14 +223,15 @@ def load_government_contracts() -> int:
                             contract_type,
                         ],
                     )
+                    cur.execute("RELEASE SAVEPOINT row_sp")
                     inserted += 1
                 except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT row_sp")
                     logger.warning(
-                        "Failed to insert government contract %s: %s",
+                        "Skipping government contract %s: %s",
                         contract_id,
                         exc,
                     )
-                    conn.rollback()
                     continue
 
     logger.info("Government contracts: inserted %d rows", inserted)

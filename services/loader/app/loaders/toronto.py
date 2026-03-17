@@ -3,7 +3,6 @@
 import csv
 import io
 import logging
-from collections import defaultdict
 from datetime import datetime
 
 import httpx
@@ -192,10 +191,11 @@ def load_building_permits() -> int:
 
                 geom_expr = "NULL"
                 geom_params: list = []
-                if lat and lon:
+                if lat is not None and lon is not None:
                     geom_expr = "ST_SetSRID(ST_MakePoint(%s, %s), 4326)"
                     geom_params = [lon, lat]
 
+                cur.execute("SAVEPOINT row_sp")
                 try:
                     cur.execute(
                         f"""
@@ -232,14 +232,15 @@ def load_building_permits() -> int:
                             status,
                         ],
                     )
+                    cur.execute("RELEASE SAVEPOINT row_sp")
                     inserted += 1
                 except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT row_sp")
                     logger.warning(
-                        "Failed to insert Toronto permit %s: %s",
+                        "Skipping Toronto permit %s: %s",
                         permit_number,
                         exc,
                     )
-                    conn.rollback()
                     continue
 
     logger.info("Toronto building permits: inserted/updated %d rows", inserted)

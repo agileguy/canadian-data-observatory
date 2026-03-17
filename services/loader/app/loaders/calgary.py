@@ -25,7 +25,7 @@ def _fetch_soda_records(
     offset: int = 0,
 ) -> list[dict] | None:
     """Fetch records from a Socrata SODA API endpoint."""
-    params: dict = {"$limit": limit, "$offset": offset}
+    params: dict = {"$limit": limit, "$offset": offset, "$order": ":id"}
     if where_clause:
         params["$where"] = where_clause
 
@@ -142,7 +142,7 @@ def load_crime_incidents() -> int:
     inserted = 0
     with get_connection() as conn:
         with conn.cursor() as cur:
-            for record in records:
+            for row_index, record in enumerate(records):
                 crime_type = (
                     record.get("category")
                     or record.get("crime_type")
@@ -180,9 +180,10 @@ def load_crime_incidents() -> int:
 
                 incident_id = (
                     f"CGY-{year or 0}-{month or 0}"
-                    f"-{crime_type}-{community or 'UNK'}"
+                    f"-{crime_type}-{community or 'UNK'}-{row_index}"
                 )
 
+                cur.execute("SAVEPOINT row_sp")
                 try:
                     cur.execute(
                         f"""
@@ -205,12 +206,13 @@ def load_crime_incidents() -> int:
                             *geom_params,
                         ],
                     )
+                    cur.execute("RELEASE SAVEPOINT row_sp")
                     inserted += 1
                 except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT row_sp")
                     logger.warning(
-                        "Failed to insert Calgary crime record: %s", exc
+                        "Skipping Calgary crime record: %s", exc
                     )
-                    conn.rollback()
                     continue
 
     logger.info("Calgary crime incidents: inserted %d rows", inserted)
@@ -287,6 +289,7 @@ def load_building_permits() -> int:
                     geom_expr = "ST_SetSRID(ST_MakePoint(%s, %s), 4326)"
                     geom_params = [lon, lat]
 
+                cur.execute("SAVEPOINT row_sp")
                 try:
                     cur.execute(
                         f"""
@@ -323,14 +326,15 @@ def load_building_permits() -> int:
                             status,
                         ],
                     )
+                    cur.execute("RELEASE SAVEPOINT row_sp")
                     inserted += 1
                 except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT row_sp")
                     logger.warning(
-                        "Failed to insert Calgary permit %s: %s",
+                        "Skipping Calgary permit %s: %s",
                         permit_number,
                         exc,
                     )
-                    conn.rollback()
                     continue
 
     logger.info("Calgary building permits: inserted/updated %d rows", inserted)

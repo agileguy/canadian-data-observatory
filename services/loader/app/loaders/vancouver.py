@@ -132,7 +132,7 @@ def load_crime_incidents() -> int:
     inserted = 0
     with get_connection() as conn:
         with conn.cursor() as cur:
-            for record in records:
+            for row_index, record in enumerate(records):
                 crime_type = (record.get("type") or "").strip()
                 if not crime_type:
                     continue
@@ -162,10 +162,11 @@ def load_crime_incidents() -> int:
                     geom_expr = "ST_SetSRID(ST_MakePoint(%s, %s), 4326)"
                     geom_params = [lon, lat]
 
-                # Build a unique-ish incident_id from available fields
+                # Build a unique incident_id from available fields
                 hundred_block = (record.get("hundred_block") or "").strip()
-                incident_id = f"VAN-{year or 0}-{month or 0}-{crime_type}-{hundred_block}"
+                incident_id = f"VAN-{year or 0}-{month or 0}-{crime_type}-{hundred_block}-{row_index}"
 
+                cur.execute("SAVEPOINT row_sp")
                 try:
                     cur.execute(
                         f"""
@@ -189,12 +190,13 @@ def load_crime_incidents() -> int:
                             None,  # premises_type not in Vancouver data
                         ],
                     )
+                    cur.execute("RELEASE SAVEPOINT row_sp")
                     inserted += 1
                 except Exception as exc:
+                    cur.execute("ROLLBACK TO SAVEPOINT row_sp")
                     logger.warning(
-                        "Failed to insert Vancouver crime record: %s", exc
+                        "Skipping Vancouver crime record: %s", exc
                     )
-                    conn.rollback()
                     continue
 
     logger.info("Vancouver crime incidents: inserted %d rows", inserted)
