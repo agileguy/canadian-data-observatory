@@ -18,7 +18,7 @@
         "label": "City",
         "multi": false,
         "includeAll": true,
-        "allValue": "Toronto','Montreal','Calgary','Edmonton",
+        "allValue": "%",
         "current": { "text": "All", "value": "$__all" },
         "options": [
           { "text": "All", "value": "$__all", "selected": true },
@@ -41,7 +41,7 @@
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
       "targets": [
         {
-          "rawSql": "SELECT stop_name, city, stop_lat AS latitude, stop_lon AS longitude FROM transit.stops WHERE city IN (${city:sqlstring}) AND stop_lat IS NOT NULL AND stop_lon IS NOT NULL LIMIT 10000",
+          "rawSql": "SELECT stop_name, city, stop_lat AS latitude, stop_lon AS longitude FROM transit.stops WHERE city LIKE ${city:sqlstring} AND stop_lat IS NOT NULL AND stop_lon IS NOT NULL LIMIT 10000",
           "format": "table",
           "refId": "A"
         }
@@ -193,7 +193,7 @@
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
       "targets": [
         {
-          "rawSql": "SELECT CASE route_type WHEN 0 THEN 'Tram/Light Rail' WHEN 1 THEN 'Subway/Metro' WHEN 2 THEN 'Rail' WHEN 3 THEN 'Bus' WHEN 4 THEN 'Ferry' WHEN 5 THEN 'Cable Tram' WHEN 6 THEN 'Gondola' WHEN 7 THEN 'Funicular' ELSE 'Other' END AS route_type_name, COUNT(*) AS count FROM transit.routes WHERE city IN (${city:sqlstring}) GROUP BY route_type ORDER BY count DESC",
+          "rawSql": "SELECT CASE route_type WHEN 0 THEN 'Tram/Light Rail' WHEN 1 THEN 'Subway/Metro' WHEN 2 THEN 'Rail' WHEN 3 THEN 'Bus' WHEN 4 THEN 'Ferry' WHEN 5 THEN 'Cable Tram' WHEN 6 THEN 'Gondola' WHEN 7 THEN 'Funicular' ELSE 'Other' END AS route_type_name, COUNT(*) AS count FROM transit.routes WHERE city LIKE ${city:sqlstring} GROUP BY route_type ORDER BY count DESC",
           "format": "table",
           "refId": "A"
         }
@@ -232,7 +232,7 @@
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
       "targets": [
         {
-          "rawSql": "SELECT r.city, r.route_count, s.stop_count FROM (SELECT city, COUNT(*) AS route_count FROM transit.routes GROUP BY city) r JOIN (SELECT city, COUNT(*) AS stop_count FROM transit.stops GROUP BY city) s ON r.city = s.city WHERE r.city IN (${city:sqlstring}) ORDER BY r.route_count DESC",
+          "rawSql": "SELECT r.city, r.route_count, s.stop_count FROM (SELECT city, COUNT(*) AS route_count FROM transit.routes GROUP BY city) r JOIN (SELECT city, COUNT(*) AS stop_count FROM transit.stops GROUP BY city) s ON r.city = s.city WHERE r.city LIKE ${city:sqlstring} ORDER BY r.route_count DESC",
           "format": "table",
           "refId": "A"
         }
