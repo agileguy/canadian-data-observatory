@@ -16,8 +16,12 @@ class Settings:
         "weather": 3600,        # 1 hour - weather updates frequently
         "transit": 604800,      # 7 days - GTFS updates weekly
         "census": 2592000,      # 30 days - census data is static
+        "housing": 86400,       # 24 hours - housing data updates monthly
+        "crime": 604800,        # 7 days - crime statistics update annually
         "municipal": 86400,     # 24 hours - permits/crime update daily
         "infrastructure": 604800,  # 7 days - building data rarely changes
+        "immigration": 604800,     # 7 days - IRCC data updates quarterly
+        "demographics": 604800,    # 7 days - population updates quarterly
     }
 
 

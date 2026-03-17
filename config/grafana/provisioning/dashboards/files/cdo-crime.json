@@ -1,0 +1,266 @@
+{
+  "uid": "cdo-crime",
+  "title": "Crime and Safety",
+  "description": "Canadian crime statistics from Statistics Canada",
+  "tags": ["cdo", "crime", "canada", "safety"],
+  "timezone": "America/Toronto",
+  "editable": true,
+  "refresh": "24h",
+  "time": {
+    "from": "now-10y",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "province",
+        "type": "custom",
+        "label": "Province",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": ["$__all"] },
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "Canada", "value": "CA", "selected": false },
+          { "text": "Ontario", "value": "ON", "selected": false },
+          { "text": "Quebec", "value": "QC", "selected": false },
+          { "text": "British Columbia", "value": "BC", "selected": false },
+          { "text": "Alberta", "value": "AB", "selected": false },
+          { "text": "Manitoba", "value": "MB", "selected": false },
+          { "text": "Saskatchewan", "value": "SK", "selected": false },
+          { "text": "Nova Scotia", "value": "NS", "selected": false },
+          { "text": "New Brunswick", "value": "NB", "selected": false },
+          { "text": "Newfoundland", "value": "NL", "selected": false },
+          { "text": "PEI", "value": "PE", "selected": false },
+          { "text": "Yukon", "value": "YT", "selected": false },
+          { "text": "Northwest Territories", "value": "NT", "selected": false },
+          { "text": "Nunavut", "value": "NU", "selected": false }
+        ],
+        "query": "CA,ON,QC,BC,AB,MB,SK,NS,NB,NL,PE,YT,NT,NU"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Crime Severity Index by Province",
+      "description": "Total Crime Severity Index across provinces (latest year)",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_crime_severity_index{type=\"total\", province=~\"$province\"}",
+          "legendFormat": "{{ province }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "orange", "value": 120 },
+              { "color": "red", "value": 200 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "always",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "CSI Trend (Total)",
+      "description": "Total Crime Severity Index trend over time by province",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_crime_severity_index{type=\"total\", province=~\"$province\"}",
+          "legendFormat": "{{ province }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          },
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Violent vs Non-Violent CSI",
+      "description": "Comparing violent and non-violent Crime Severity Index",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_crime_severity_index{type=\"violent\", province=~\"$province\"}",
+          "legendFormat": "Violent - {{ province }}",
+          "refId": "A"
+        },
+        {
+          "expr": "cdo_crime_severity_index{type=\"nonviolent\", province=~\"$province\"}",
+          "legendFormat": "Non-violent - {{ province }}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "spanNulls": true,
+            "axisSoftMin": 0
+          },
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "/Violent/" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byRegexp", "options": "/Non-violent/" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Crime Rate per 100K",
+      "description": "Crime rate per 100,000 population by province",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_crime_rate_per_100k{province=~\"$province\"}",
+          "legendFormat": "{{ province }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-RdYlGr", "fixedColor": "green" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5000 },
+              { "color": "orange", "value": 8000 },
+              { "color": "red", "value": 12000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Top Offence Types",
+      "description": "Breakdown of crime incidents by offence type (Canada)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_crime_incidents_total{province=\"CA\", offence_type!=\"total_violations\"}",
+          "legendFormat": "{{ offence_type }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "pieType": "donut",
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
