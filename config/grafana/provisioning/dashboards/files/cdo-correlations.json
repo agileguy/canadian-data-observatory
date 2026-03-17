@@ -1,0 +1,267 @@
+{
+  "uid": "cdo-correlations",
+  "title": "Cross-Domain Insights",
+  "description": "Cross-domain correlations revealing relationships between Canadian public datasets",
+  "tags": ["cdo", "correlations", "cross-domain", "analytics"],
+  "timezone": "America/Toronto",
+  "editable": true,
+  "refresh": "1h",
+  "time": {
+    "from": "now-5y",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "province",
+        "type": "custom",
+        "label": "Province",
+        "current": { "text": "Canada", "value": "CA" },
+        "options": [
+          { "text": "Canada", "value": "CA", "selected": true },
+          { "text": "Ontario", "value": "ON", "selected": false },
+          { "text": "Quebec", "value": "QC", "selected": false },
+          { "text": "British Columbia", "value": "BC", "selected": false },
+          { "text": "Alberta", "value": "AB", "selected": false },
+          { "text": "Manitoba", "value": "MB", "selected": false },
+          { "text": "Saskatchewan", "value": "SK", "selected": false },
+          { "text": "Nova Scotia", "value": "NS", "selected": false },
+          { "text": "New Brunswick", "value": "NB", "selected": false },
+          { "text": "Newfoundland", "value": "NL", "selected": false },
+          { "text": "PEI", "value": "PE", "selected": false }
+        ],
+        "query": "CA,ON,QC,BC,AB,MB,SK,NS,NB,NL,PE"
+      },
+      {
+        "name": "cma",
+        "type": "custom",
+        "label": "Census Metropolitan Area",
+        "current": { "text": "Toronto", "value": "Toronto" },
+        "options": [
+          { "text": "Toronto", "value": "Toronto", "selected": true },
+          { "text": "Vancouver", "value": "Vancouver", "selected": false },
+          { "text": "Montreal", "value": "Montreal", "selected": false },
+          { "text": "Calgary", "value": "Calgary", "selected": false },
+          { "text": "Edmonton", "value": "Edmonton", "selected": false },
+          { "text": "Ottawa-Gatineau", "value": "Ottawa-Gatineau", "selected": false },
+          { "text": "Winnipeg", "value": "Winnipeg", "selected": false },
+          { "text": "Halifax", "value": "Halifax", "selected": false },
+          { "text": "Victoria", "value": "Victoria", "selected": false },
+          { "text": "Hamilton", "value": "Hamilton", "selected": false }
+        ],
+        "query": "Toronto,Vancouver,Montreal,Calgary,Edmonton,Ottawa-Gatineau,Winnipeg,Halifax,Victoria,Hamilton"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Housing Prices vs Immigration",
+      "description": "Scatter plot comparing permanent residents admitted against housing price index by CMA. Explores whether immigration volumes correlate with housing market activity.",
+      "type": "xychart",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_immigration_permanent_residents_total{province=\"$province\"}",
+          "legendFormat": "Permanent Residents",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "cdo_housing_price_index{cma=\"$cma\"}",
+          "legendFormat": "Housing Price Index",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "pointSize": { "fixed": 8 },
+            "show": "points"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "seriesMapping": "manual",
+        "dims": {
+          "x": "A",
+          "y": ["B"]
+        },
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Crime Rates vs Unemployment",
+      "description": "Time series overlay comparing the Crime Severity Index against the unemployment rate. Tests the hypothesis that economic hardship correlates with criminal activity.",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_crime_severity_index{province=\"$province\",type=\"total\"}",
+          "legendFormat": "Crime Severity Index",
+          "refId": "A"
+        },
+        {
+          "expr": "cdo_economy_unemployment_rate_percent{province=\"$province\"}",
+          "legendFormat": "Unemployment Rate (%)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true,
+            "axisCenteredZero": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Crime Severity Index" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "left" },
+              { "id": "custom.axisLabel", "value": "Crime Severity Index" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Unemployment Rate (%)" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "custom.axisLabel", "value": "Unemployment Rate (%)" },
+              { "id": "unit", "value": "percent" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Health Spending vs Life Expectancy",
+      "description": "Scatter plot of per-capita health spending against life expectancy, broken down by province. Explores the relationship between healthcare investment and outcomes.",
+      "type": "xychart",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_health_spending_per_capita_dollars",
+          "legendFormat": "{{ province }}",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "cdo_health_life_expectancy_years{sex=\"both\"}",
+          "legendFormat": "{{ province }}",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "pointSize": { "fixed": 10 },
+            "show": "points"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "seriesMapping": "manual",
+        "dims": {
+          "x": "A",
+          "y": ["B"]
+        },
+        "tooltip": { "mode": "single" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Population Growth vs Housing Starts",
+      "description": "Dual-axis time series comparing population growth rate against total housing starts. Reveals whether housing supply keeps pace with demographic demand.",
+      "type": "timeseries",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_demographics_population_growth_rate_percent{province=\"$province\"}",
+          "legendFormat": "Population Growth Rate (%)",
+          "refId": "A"
+        },
+        {
+          "expr": "cdo_housing_starts_total{cma=\"$cma\",type=\"all\"}",
+          "legendFormat": "Housing Starts (All Types)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Population Growth Rate (%)" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "left" },
+              { "id": "custom.axisLabel", "value": "Growth Rate (%)" },
+              { "id": "unit", "value": "percent" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Housing Starts (All Types)" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "custom.axisLabel", "value": "Housing Starts" },
+              { "id": "unit", "value": "short" },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Attribution",
+      "description": "",
+      "type": "text",
+      "gridPos": { "h": 2, "w": 24, "x": 0, "y": 20 },
+      "datasource": null,
+      "targets": [],
+      "options": {
+        "mode": "markdown",
+        "content": "Contains information licensed under the [Open Government Licence - Canada](https://open.canada.ca/en/open-government-licence-canada). Data sourced from Statistics Canada, Environment and Climate Change Canada, and other federal agencies."
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

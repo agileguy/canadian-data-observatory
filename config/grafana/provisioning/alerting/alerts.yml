@@ -1,0 +1,111 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: CDO Domain Alerts
+    folder: Canadian Data Observatory
+    interval: 5m
+    rules:
+      - uid: cdo-alert-housing-spike
+        title: Housing Price Spike
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 31536000
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: cdo_housing_avg_price_dollars
+              instant: false
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 63072000
+              to: 31536000
+            datasourceUid: prometheus
+            model:
+              expr: cdo_housing_avg_price_dollars
+              instant: false
+              refId: B
+          - refId: C
+            datasourceUid: "-100"
+            model:
+              type: math
+              expression: "($A - $B) / $B > 0.20"
+              refId: C
+        for: 1h
+        labels:
+          severity: warning
+          domain: housing
+        annotations:
+          summary: "Housing prices spiked more than 20% year-over-year"
+          description: "Average housing price has increased by more than 20% compared to the same period last year. This may indicate overheating in the housing market."
+
+      - uid: cdo-alert-unemployment-high
+        title: Unemployment Rate Above Threshold
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: cdo_economy_unemployment_rate_percent{province="CA"}
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 8
+                  operator:
+                    type: and
+              refId: B
+        for: 30m
+        labels:
+          severity: warning
+          domain: economy
+        annotations:
+          summary: "National unemployment rate exceeds 8%"
+          description: "The Canadian national unemployment rate has exceeded 8%, which is above the historical average and may signal economic distress."
+
+      - uid: cdo-alert-crime-severity
+        title: Crime Severity Index Elevated
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: cdo_crime_severity_index{province="CA",type="total"}
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: "-100"
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params:
+                      - 80
+                  operator:
+                    type: and
+              refId: B
+        for: 1h
+        labels:
+          severity: warning
+          domain: crime
+        annotations:
+          summary: "National Crime Severity Index exceeds 80"
+          description: "The national Crime Severity Index has risen above 80, indicating elevated criminal activity relative to the 2006 baseline of 100."
