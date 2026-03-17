@@ -256,6 +256,12 @@ def _parse_life_expectancy() -> Optional[Dict[str, Dict[str, float]]]:
     """Parse life expectancy at birth from Table 13-10-0114-01.
 
     Returns dict of province -> {sex: years} for both/male/female.
+
+    IMPORTANT: This table is a complete life table with actuarial columns.
+    The VALUE column contains different measures depending on the
+    "Element of the life table" field. We need "ex" (life expectancy)
+    at age 0 (Age group = "<1 year" or "0" or "At birth").
+    Without filtering, we'd get lx=100000 which is the radix, not years.
     """
     csv_text = _download_statcan_csv(LIFE_EXPECTANCY_URL)
     if not csv_text:
@@ -286,10 +292,29 @@ def _parse_life_expectancy() -> Optional[Dict[str, Dict[str, float]]]:
             if not sex:
                 continue
 
+            # Filter for life expectancy element (ex), not lx/dx/qx/etc.
+            element = row.get("Element of the life table", "").strip().lower()
+            if not element:
+                # Try alternate column names
+                element = row.get("Characteristics", "").strip().lower()
+            if "life expectancy" not in element and element != "ex":
+                continue
+
+            # Filter for age 0 / at birth
+            age_group = row.get("Age group", "").strip().lower()
+            if not age_group:
+                age_group = row.get("Age at the beginning of the age interval, x", "").strip().lower()
+            if age_group and "0" not in age_group and "birth" not in age_group and "<1" not in age_group:
+                continue
+
             code = GEO_TO_CODE[geo]
             try:
                 value = float(value_str)
             except ValueError:
+                continue
+
+            # Sanity check: real life expectancy should be between 50 and 100
+            if value < 50 or value > 100:
                 continue
 
             key = f"{code}:{sex}"

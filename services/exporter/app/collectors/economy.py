@@ -1,17 +1,36 @@
-"""Economy collector - fetches Canadian economic indicators from Statistics Canada."""
+"""Economy collector - fetches Canadian economic indicators from Statistics Canada.
+
+Uses CSV bulk download from StatCan tables rather than the stats_can library,
+which has pydantic compatibility issues. Follows the same pattern as demographics.py.
+"""
 
 import asyncio
+import csv
+import io
 import logging
 import time
-from functools import partial
+import zipfile
 from typing import Any, Dict, Optional
 
+import httpx
 from prometheus_client import Gauge
 
 from app.cache import RedisCache
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# StatCan CSV download URLs (table ID -> zip URL)
+# ---------------------------------------------------------------------------
+STATCAN_TABLES: Dict[str, str] = {
+    "gdp": "https://www150.statcan.gc.ca/n1/tbl/csv/36100434-eng.zip",
+    "cpi": "https://www150.statcan.gc.ca/n1/tbl/csv/18100004-eng.zip",
+    "unemployment": "https://www150.statcan.gc.ca/n1/tbl/csv/14100287-eng.zip",
+    "trade": "https://www150.statcan.gc.ca/n1/tbl/csv/12100011-eng.zip",
+    "retail": "https://www150.statcan.gc.ca/n1/tbl/csv/20100008-eng.zip",
+    "interest_rates": "https://www150.statcan.gc.ca/n1/tbl/csv/10100122-eng.zip",
+}
 
 # Prometheus Gauges for economic indicators
 # Names and labels match the Grafana dashboard queries (SRD convention)
@@ -65,19 +84,6 @@ last_update_gauge = Gauge(
     "Timestamp of last successful economy data update (unix epoch)",
 )
 
-# StatCan vector IDs for each economic indicator
-# Reference: Statistics Canada Table/Vector lookup
-VECTORS: Dict[str, str] = {
-    "gdp_monthly": "v65201210",           # GDP at basic prices, monthly
-    "cpi_all_items": "v41690973",          # CPI, all items, Canada
-    "unemployment_rate": "v2062815",       # Unemployment rate, Canada, SA
-    "employment": "v2062811",             # Employment, Canada, SA
-    "exports_total": "v1001829628",       # Total exports
-    "imports_total": "v1001829629",       # Total imports
-    "interest_rate_target": "v39079",     # Bank rate / target overnight rate
-    "retail_sales": "v52367797",          # Retail trade, Canada, SA
-}
-
 
 async def fetch_and_update(cache: RedisCache) -> None:
     """Fetch economic indicators from StatCan, update Prometheus gauges.
@@ -112,38 +118,207 @@ async def fetch_and_update(cache: RedisCache) -> None:
         logger.exception("Failed to fetch economy data from StatCan")
 
 
-def _fetch_statcan() -> Optional[Dict[str, Any]]:
-    """Synchronous fetch from Statistics Canada using stats_can library.
-
-    Runs in a thread executor to avoid blocking the event loop.
-    Returns a dict of indicator_name -> latest_value.
-    """
+def _download_csv(url: str) -> Optional[str]:
+    """Download a StatCan CSV zip and return the extracted CSV text."""
     try:
-        import stats_can
+        logger.debug("Downloading CSV from %s", url)
+        resp = httpx.get(url, timeout=120.0, follow_redirects=True)
+        resp.raise_for_status()
 
-        vector_ids = list(VECTORS.values())
-        vector_names = list(VECTORS.keys())
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
+            if not csv_names:
+                logger.error("No CSV file found in zip from %s", url)
+                return None
+            return zf.read(csv_names[0]).decode("utf-8-sig")
 
-        # Fetch latest values for all vectors at once
-        df = stats_can.vectors_to_df(vector_ids, periods=1)
-
-        results = {}
-        for name, vec_id in VECTORS.items():
-            col_match = [c for c in df.columns if vec_id in str(c)]
-            if col_match:
-                val = df[col_match[0]].dropna().iloc[-1] if not df[col_match[0]].dropna().empty else None
-                if val is not None:
-                    results[name] = float(val)
-                    logger.debug("StatCan %s (%s) = %s", name, vec_id, val)
-
-        return results if results else None
-
-    except ImportError:
-        logger.error("stats_can library not available")
+    except httpx.HTTPError as exc:
+        logger.error("HTTP error downloading %s: %s", url, exc)
         return None
     except Exception:
-        logger.exception("StatCan API call failed")
+        logger.exception("Failed to download/extract CSV from %s", url)
         return None
+
+
+def _latest_canada_value(
+    csv_text: str,
+    member_filter: Optional[str] = None,
+    member_field: Optional[str] = None,
+) -> Optional[float]:
+    """Extract the latest VALUE for GEO='Canada' from a StatCan CSV.
+
+    Optionally filter by a member/item field containing a substring.
+    Returns the most recent value (by REF_DATE) or None.
+    """
+    reader = csv.DictReader(io.StringIO(csv_text))
+    best_date = ""
+    best_value: Optional[float] = None
+
+    for row in reader:
+        geo = row.get("GEO", "").strip()
+        if geo != "Canada":
+            continue
+
+        # Apply optional member filter
+        if member_filter and member_field:
+            field_val = row.get(member_field, "").strip()
+            if member_filter.lower() not in field_val.lower():
+                continue
+
+        ref_date = row.get("REF_DATE", "").strip()
+        value_str = row.get("VALUE", "").strip()
+        if not value_str:
+            continue
+
+        try:
+            value = float(value_str)
+        except ValueError:
+            continue
+
+        if ref_date > best_date:
+            best_date = ref_date
+            best_value = value
+
+    return best_value
+
+
+def _fetch_statcan() -> Optional[Dict[str, Any]]:
+    """Synchronous fetch from Statistics Canada using CSV bulk download.
+
+    Downloads zip files for each table, extracts CSVs, and parses
+    the latest Canada-level values. Runs in a thread executor.
+    """
+    results: Dict[str, Any] = {}
+
+    # --- GDP (Table 36-10-0434-01) ---
+    csv_text = _download_csv(STATCAN_TABLES["gdp"])
+    if csv_text:
+        val = _latest_canada_value(
+            csv_text,
+            member_filter="Gross domestic product at market prices",
+            member_field="North American Industry Classification System (NAICS)",
+        )
+        if val is not None:
+            results["gdp_monthly"] = val
+            logger.debug("GDP = %s", val)
+
+    # --- CPI (Table 18-10-0004-01) ---
+    csv_text = _download_csv(STATCAN_TABLES["cpi"])
+    if csv_text:
+        val = _latest_canada_value(
+            csv_text,
+            member_filter="All-items",
+            member_field="Products and product groups",
+        )
+        if val is not None:
+            results["cpi_all_items"] = val
+            logger.debug("CPI = %s", val)
+
+    # --- Unemployment (Table 14-10-0287-01) ---
+    csv_text = _download_csv(STATCAN_TABLES["unemployment"])
+    if csv_text:
+        # Parse unemployment rate and employment count
+        reader = csv.DictReader(io.StringIO(csv_text))
+        best_date = ""
+        unemp_rate: Optional[float] = None
+        employment: Optional[float] = None
+
+        for row in reader:
+            geo = row.get("GEO", "").strip()
+            if geo != "Canada":
+                continue
+
+            ref_date = row.get("REF_DATE", "").strip()
+            value_str = row.get("VALUE", "").strip()
+            estimate = row.get("Labour force characteristics", "").strip()
+
+            if not value_str or ref_date < best_date:
+                continue
+
+            try:
+                value = float(value_str)
+            except ValueError:
+                continue
+
+            if ref_date > best_date:
+                best_date = ref_date
+
+            if "Unemployment rate" in estimate:
+                unemp_rate = value
+            elif estimate == "Employment":
+                employment = value
+
+        if unemp_rate is not None:
+            results["unemployment_rate"] = unemp_rate
+            logger.debug("Unemployment rate = %s", unemp_rate)
+        if employment is not None:
+            results["employment"] = employment
+            logger.debug("Employment = %s", employment)
+
+    # --- Trade (Table 12-10-0011-01) ---
+    csv_text = _download_csv(STATCAN_TABLES["trade"])
+    if csv_text:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        best_date = ""
+        exports_val: Optional[float] = None
+        imports_val: Optional[float] = None
+
+        for row in reader:
+            geo = row.get("GEO", "").strip()
+            if geo != "Canada":
+                continue
+
+            ref_date = row.get("REF_DATE", "").strip()
+            value_str = row.get("VALUE", "").strip()
+            trade_field = row.get("Trade", "").strip()
+
+            if not value_str:
+                continue
+
+            try:
+                value = float(value_str)
+            except ValueError:
+                continue
+
+            if ref_date >= best_date:
+                best_date = ref_date
+                if "export" in trade_field.lower():
+                    exports_val = value
+                elif "import" in trade_field.lower():
+                    imports_val = value
+
+        if exports_val is not None:
+            results["exports_total"] = exports_val
+            logger.debug("Exports = %s", exports_val)
+        if imports_val is not None:
+            results["imports_total"] = imports_val
+            logger.debug("Imports = %s", imports_val)
+
+    # --- Retail (Table 20-10-0008-01) ---
+    csv_text = _download_csv(STATCAN_TABLES["retail"])
+    if csv_text:
+        val = _latest_canada_value(
+            csv_text,
+            member_filter="Retail trade",
+            member_field="North American Industry Classification System (NAICS)",
+        )
+        if val is not None:
+            results["retail_sales"] = val
+            logger.debug("Retail sales = %s", val)
+
+    # --- Interest Rates (Table 10-10-0122-01) ---
+    csv_text = _download_csv(STATCAN_TABLES["interest_rates"])
+    if csv_text:
+        val = _latest_canada_value(
+            csv_text,
+            member_filter="Bank rate",
+            member_field="Financial market statistics",
+        )
+        if val is not None:
+            results["interest_rate_target"] = val
+            logger.debug("Interest rate = %s", val)
+
+    return results if results else None
 
 
 def _apply_cached(data: Dict[str, Any]) -> None:
