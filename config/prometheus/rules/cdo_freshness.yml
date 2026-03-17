@@ -71,6 +71,16 @@ groups:
           summary: "Health data is stale"
           description: "Health data has not been updated for more than 90 days. Last update was {{ $value | humanizeDuration }} ago."
 
+      - alert: TransitDataStale
+        expr: (time() - cdo_transit_last_update_timestamp) > 7776000
+        for: 5m
+        labels:
+          severity: warning
+          domain: transit
+        annotations:
+          summary: "Transit data is stale"
+          description: "Transit GTFS data has not been updated for more than 90 days. Last update was {{ $value | humanizeDuration }} ago."
+
       - alert: GovernmentDataStale
         expr: (time() - cdo_government_last_update_timestamp) > 2592000
         for: 5m
