@@ -13,8 +13,20 @@
 # Census: Population and demographics (quarterly, 1st of Jan/Apr/Jul/Oct)
 0 4 1 1,4,7,10 * cd /app && python -m app.main census >> /var/log/cdo-loader.log 2>&1
 
-# Municipal: Building permits, crime (daily, 5am ET)
+# Municipal: All cities combined (daily, 5am ET)
 0 5 * * * cd /app && python -m app.main municipal >> /var/log/cdo-loader.log 2>&1
+
+# Municipal: Toronto building permits (weekly, Monday 6am ET)
+0 6 * * 1 cd /app && python -m app.main load-toronto >> /var/log/cdo-loader.log 2>&1
+
+# Municipal: Vancouver crime incidents (weekly, Tuesday 6am ET)
+0 6 * * 2 cd /app && python -m app.main load-vancouver >> /var/log/cdo-loader.log 2>&1
+
+# Municipal: Calgary crime + permits (weekly, Wednesday 6am ET)
+0 6 * * 3 cd /app && python -m app.main load-calgary >> /var/log/cdo-loader.log 2>&1
+
+# Government: Federal contracts over $10K (daily, 7am ET)
+0 7 * * * cd /app && python -m app.main load-government >> /var/log/cdo-loader.log 2>&1
 
 # Geo: Boundary files (monthly, 15th at 2am)
 0 2 15 * * cd /app && python -m app.main geo >> /var/log/cdo-loader.log 2>&1
