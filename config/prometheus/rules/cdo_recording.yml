@@ -1,0 +1,15 @@
+groups:
+  - name: cdo_recording
+    interval: 5m
+    rules:
+      - record: cdo:economy:national_summary
+        expr: '{__name__=~"cdo_economy_.+",province="CA"}'
+
+      - record: cdo:housing:avg_price_national
+        expr: avg(cdo_housing_avg_price_dollars)
+
+      - record: cdo:crime:national_csi
+        expr: cdo_crime_severity_index{province="CA",type="total"}
+
+      - record: cdo:immigration:annual_total
+        expr: sum(cdo_immigration_permanent_residents_total{year=~"202[5-6]"})
