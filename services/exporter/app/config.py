@@ -22,6 +22,7 @@ class Settings:
         "infrastructure": 604800,  # 7 days - building data rarely changes
         "immigration": 604800,     # 7 days - IRCC data updates quarterly
         "demographics": 604800,    # 7 days - population updates quarterly
+        "government": 86400,       # 24 hours - contracts/grants update infrequently
     }
 
 

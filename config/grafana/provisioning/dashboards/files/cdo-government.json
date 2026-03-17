@@ -1,0 +1,274 @@
+{
+  "uid": "cdo-government",
+  "title": "Government Spending Transparency",
+  "description": "Federal government contracts, grants, and travel spending from Open Canada",
+  "tags": ["cdo", "government", "canada", "transparency"],
+  "timezone": "America/Toronto",
+  "editable": true,
+  "refresh": "24h",
+  "time": {
+    "from": "now-5y",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "fiscal_year",
+        "type": "query",
+        "label": "Fiscal Year",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(cdo_government_contracts_total_value_dollars, fiscal_year)",
+        "current": { "text": "All", "value": "$__all" },
+        "includeAll": true,
+        "multi": true,
+        "sort": 2,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Contract Spending Trend",
+      "description": "Total contract spending by fiscal year",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (fiscal_year) (cdo_government_contracts_total_value_dollars{fiscal_year=~\"$fiscal_year\"})",
+          "legendFormat": "{{ fiscal_year }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "scheme",
+            "spanNulls": true,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "stacking": { "mode": "none" }
+          },
+          "unit": "currencyCAD",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Contract Count",
+      "description": "Total number of contracts over $10K",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(cdo_government_contracts_count{fiscal_year=~\"$fiscal_year\"})",
+          "legendFormat": "Total Contracts",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 1000 },
+              { "color": "orange", "value": 10000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Top Departments by Contract Spending",
+      "description": "Largest federal departments by total contract value",
+      "type": "barchart",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT department, SUM(contract_value) AS total_value FROM muni.government_contracts WHERE fiscal_year IN ($fiscal_year) GROUP BY department ORDER BY total_value DESC LIMIT 15",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "currencyCAD",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "department",
+        "barWidth": 0.7,
+        "groupWidth": 0.7,
+        "showValue": "auto",
+        "stacking": "none",
+        "legend": { "displayMode": "hidden" },
+        "tooltip": { "mode": "single" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Grants and Contributions",
+      "description": "Federal grants and contributions by fiscal year",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_government_grants_total_value_dollars{fiscal_year=~\"$fiscal_year\"}",
+          "legendFormat": "{{ fiscal_year }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "spanNulls": true,
+            "axisSoftMin": 0,
+            "drawStyle": "bars",
+            "stacking": { "mode": "none" }
+          },
+          "unit": "currencyCAD",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Travel Expenses",
+      "description": "Federal travel expenses by fiscal year",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_government_travel_total_dollars{fiscal_year=~\"$fiscal_year\"}",
+          "legendFormat": "{{ fiscal_year }}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "spanNulls": true,
+            "axisSoftMin": 0,
+            "drawStyle": "bars",
+            "stacking": { "mode": "none" }
+          },
+          "unit": "currencyCAD",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Contract Value Distribution",
+      "description": "Distribution of individual contract values",
+      "type": "histogram",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 26 },
+      "datasource": { "type": "postgres", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT contract_value FROM muni.government_contracts WHERE fiscal_year IN ($fiscal_year) AND contract_value > 0 AND contract_value < 10000000 ORDER BY contract_value",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "currencyCAD",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "bucketSize": 100000,
+        "combine": false,
+        "fillOpacity": 80,
+        "gradientMode": "scheme",
+        "legend": { "displayMode": "hidden" },
+        "tooltip": { "mode": "single" }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

@@ -357,6 +357,27 @@
           "refId": "D",
           "instant": true,
           "format": "table"
+        },
+        {
+          "expr": "cdo_health_last_update_timestamp",
+          "legendFormat": "Health",
+          "refId": "E",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "cdo_transit_last_update_timestamp",
+          "legendFormat": "Transit",
+          "refId": "F",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "cdo_government_last_update_timestamp",
+          "legendFormat": "Government",
+          "refId": "G",
+          "instant": true,
+          "format": "table"
         }
       ],
       "fieldConfig": {
