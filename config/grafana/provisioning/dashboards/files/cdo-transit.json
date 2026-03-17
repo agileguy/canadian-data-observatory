@@ -17,10 +17,12 @@
         "type": "custom",
         "label": "City",
         "multi": false,
-        "includeAll": false,
-        "current": { "text": "Toronto", "value": "Toronto" },
+        "includeAll": true,
+        "allValue": "Toronto','Montreal','Calgary','Edmonton",
+        "current": { "text": "All", "value": "$__all" },
         "options": [
-          { "text": "Toronto", "value": "Toronto", "selected": true },
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "Toronto", "value": "Toronto", "selected": false },
           { "text": "Montreal", "value": "Montreal", "selected": false },
           { "text": "Calgary", "value": "Calgary", "selected": false },
           { "text": "Edmonton", "value": "Edmonton", "selected": false }
