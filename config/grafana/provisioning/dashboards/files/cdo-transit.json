@@ -98,82 +98,88 @@
       "id": 2,
       "title": "Route Coverage by City",
       "description": "Total number of transit routes per city",
-      "type": "barchart",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 16 },
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
       "targets": [
         {
-          "rawSql": "SELECT city, COUNT(*) AS route_count FROM transit.routes WHERE city IN (${city:sqlstring}) GROUP BY city ORDER BY route_count DESC",
+          "rawSql": "SELECT city AS metric, COUNT(*) AS route_count FROM transit.routes GROUP BY city ORDER BY route_count DESC",
           "format": "table",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": { "mode": "thresholds" },
           "unit": "short",
           "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 100 },
-              { "color": "orange", "value": 200 },
-              { "color": "red", "value": 400 }
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 100 },
+              { "color": "yellow", "value": 300 },
+              { "color": "red", "value": 500 }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "orientation": "vertical",
-        "showValue": "always",
-        "groupWidth": 0.7,
-        "barWidth": 0.9,
-        "xField": "city",
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/route_count/",
+          "values": true
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
       }
     },
     {
       "id": 3,
       "title": "Stops by City",
       "description": "Total number of transit stops per city",
-      "type": "barchart",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 16 },
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
       "targets": [
         {
-          "rawSql": "SELECT city, COUNT(*) AS stop_count FROM transit.stops WHERE city IN (${city:sqlstring}) GROUP BY city ORDER BY stop_count DESC",
+          "rawSql": "SELECT city AS metric, COUNT(*) AS stop_count FROM transit.stops GROUP BY city ORDER BY stop_count DESC",
           "format": "table",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": { "mode": "thresholds" },
           "unit": "short",
           "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 2000 },
-              { "color": "orange", "value": 5000 },
-              { "color": "red", "value": 10000 }
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 2000 },
+              { "color": "yellow", "value": 5000 },
+              { "color": "orange", "value": 8000 }
             ]
           }
         },
         "overrides": []
       },
       "options": {
-        "orientation": "vertical",
-        "showValue": "always",
-        "groupWidth": 0.7,
-        "barWidth": 0.9,
-        "xField": "city",
-        "tooltip": { "mode": "single", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/stop_count/",
+          "values": true
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
       }
     },
     {
