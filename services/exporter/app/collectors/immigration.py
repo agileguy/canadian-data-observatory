@@ -7,6 +7,11 @@ from typing import Any, Dict, List, Optional
 
 from prometheus_client import Gauge
 
+import csv
+import io
+
+import httpx
+
 from app.cache import RedisCache
 from app.parsers.ckan import fetch_ckan_dataset, fetch_ckan_resource
 
@@ -16,10 +21,10 @@ logger = logging.getLogger(__name__)
 # CKAN Package IDs (Open Canada / IRCC)
 # ---------------------------------------------------------------------------
 PACKAGES: Dict[str, str] = {
-    "permanent_residents": "f7e5498e-0ad8-4f28-85e3-28b3f4006816",
+    "permanent_residents": "f7e5498e-0ad8-4417-85c9-9b8aff9b9eda",
     "temporary_residents": "360024f2-17e9-4558-bfc1-3616485d65b9",
-    "refugee_claimants": "b6cbcf4d-f763-4864-a67e-20e28d44ac28",
-    "citizenship_grants": "3a72a3d3-fee4-49c5-869f-a530dba2bba4",
+    "refugee_claimants": "b6cbcf4d-f763-4924-a2fb-8cc4a06e3de4",
+    "citizenship_grants": "9b34e712-513f-44e9-babf-9df4f7256550",
 }
 
 # Province code mapping for normalisation
@@ -205,10 +210,22 @@ async def _fetch_package_records(package_id: str) -> Optional[List[Dict]]:
                 break
 
     if csv_resource is None:
+        # Fallback: download CSV/XLSX resource directly if not datastore-active
+        for res in resources:
+            fmt = (res.get("format") or "").upper()
+            if fmt in ("CSV", "XLSX"):
+                csv_resource = res
+                break
+
+    if csv_resource is None:
         logger.warning(
-            "No datastore-active resource found in package %s", package_id
+            "No suitable resource found in package %s", package_id
         )
         return None
+
+    # If not datastore-active, try downloading the CSV directly
+    if not csv_resource.get("datastore_active", False):
+        return await _download_resource_csv(csv_resource, package_id)
 
     resource_id = csv_resource["id"]
     logger.debug("Using resource %s from package %s", resource_id, package_id)
@@ -244,6 +261,44 @@ async def _fetch_package_records(package_id: str) -> Optional[List[Dict]]:
         resource_id,
     )
     return all_records if all_records else None
+
+
+async def _download_resource_csv(
+    resource: dict, package_id: str
+) -> Optional[List[Dict]]:
+    """Download a CSV resource directly when CKAN datastore is not active.
+
+    Falls back to downloading the raw CSV file from the resource URL and
+    parsing it with the csv module.
+    """
+    url = resource.get("url")
+    if not url:
+        logger.warning("Resource in package %s has no URL", package_id)
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            text = resp.text
+
+        reader = csv.DictReader(io.StringIO(text))
+        records = list(reader)
+        logger.info(
+            "Downloaded %d records from CSV resource in package %s",
+            len(records),
+            package_id,
+        )
+        return records if records else None
+
+    except Exception as exc:
+        logger.error(
+            "Failed to download CSV resource from %s (package %s): %s",
+            url,
+            package_id,
+            exc,
+        )
+        return None
 
 
 def _normalise_province(raw: Optional[str]) -> Optional[str]:

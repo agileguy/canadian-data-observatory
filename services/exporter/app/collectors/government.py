@@ -46,7 +46,7 @@ last_update_gauge = Gauge(
 # CKAN package IDs from Open Canada
 # ---------------------------------------------------------------------------
 CONTRACTS_PACKAGE_ID = "d8f85d91-7dec-4fd1-8055-483b77225d8b"
-GRANTS_PACKAGE_ID = "432527ab-7aac-45b5-81d6-7597107a7f5d"
+GRANTS_PACKAGE_ID = "432527ab-7aac-45b5-81d6-7597107a7013"
 
 # Only emit data for the last 5 fiscal years to control cardinality
 MAX_FISCAL_YEARS = 5
@@ -147,11 +147,14 @@ async def _fetch_government_data() -> Optional[Dict[str, Any]]:
 
 
 def _find_datastore_resource(resources: List[dict]) -> Optional[str]:
-    """Find the first datastore-active resource in a CKAN dataset."""
+    """Find the first datastore-active resource in a CKAN dataset.
+
+    Falls back to the first CSV/XLS resource if no datastore-active resource.
+    """
     for r in resources:
         if r.get("datastore_active"):
             return r["id"]
-    # Fallback: first CSV resource
+    # Fallback: first CSV resource (may need direct download instead of datastore_search)
     for r in resources:
         fmt = (r.get("format") or "").upper()
         if fmt in ("CSV", "XLS", "XLSX"):

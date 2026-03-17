@@ -1,15 +1,29 @@
-"""Crime collector - fetches Canadian crime statistics from Statistics Canada."""
+"""Crime collector - fetches Canadian crime statistics from Statistics Canada.
+
+Uses CSV bulk download from StatCan Table 35-10-0026-01 (Crime Severity Index)
+rather than the stats_can library, which has pydantic compatibility issues.
+Follows the same pattern as demographics.py.
+"""
 
 import asyncio
+import csv
+import io
 import logging
 import time
+import zipfile
 from typing import Any, Dict, Optional
 
+import httpx
 from prometheus_client import Gauge
 
 from app.cache import RedisCache
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# StatCan CSV download URL for CSI (Table 35-10-0026-01)
+# ---------------------------------------------------------------------------
+CSI_CSV_URL = "https://www150.statcan.gc.ca/n1/tbl/csv/35100026-eng.zip"
 
 # ---------------------------------------------------------------------------
 # Prometheus Gauges (SRD naming convention)
@@ -54,39 +68,14 @@ PROVINCE_CODES: Dict[str, str] = {
     "Nunavut": "NU",
 }
 
-# ---------------------------------------------------------------------------
-# StatCan Table 35-10-0026-01: Crime Severity Index and crime rate
-# Provincial CSI vectors (total Crime Severity Index)
-PROVINCIAL_CSI_VECTORS: Dict[str, Dict[str, str]] = {
-    "CA": {"total": "v107388556", "violent": "v107388601", "nonviolent": "v107388646", "crime_rate": "v107388691"},
-    "NL": {"total": "v107388557", "violent": "v107388602", "nonviolent": "v107388647", "crime_rate": "v107388692"},
-    "PE": {"total": "v107388558", "violent": "v107388603", "nonviolent": "v107388648", "crime_rate": "v107388693"},
-    "NS": {"total": "v107388559", "violent": "v107388604", "nonviolent": "v107388649", "crime_rate": "v107388694"},
-    "NB": {"total": "v107388560", "violent": "v107388605", "nonviolent": "v107388650", "crime_rate": "v107388695"},
-    "QC": {"total": "v107388561", "violent": "v107388606", "nonviolent": "v107388651", "crime_rate": "v107388696"},
-    "ON": {"total": "v107388562", "violent": "v107388607", "nonviolent": "v107388652", "crime_rate": "v107388697"},
-    "MB": {"total": "v107388563", "violent": "v107388608", "nonviolent": "v107388653", "crime_rate": "v107388698"},
-    "SK": {"total": "v107388564", "violent": "v107388609", "nonviolent": "v107388654", "crime_rate": "v107388699"},
-    "AB": {"total": "v107388565", "violent": "v107388610", "nonviolent": "v107388655", "crime_rate": "v107388700"},
-    "BC": {"total": "v107388566", "violent": "v107388611", "nonviolent": "v107388656", "crime_rate": "v107388701"},
-    "YT": {"total": "v107388567", "violent": "v107388612", "nonviolent": "v107388657", "crime_rate": "v107388702"},
-    "NT": {"total": "v107388568", "violent": "v107388613", "nonviolent": "v107388658", "crime_rate": "v107388703"},
-    "NU": {"total": "v107388569", "violent": "v107388614", "nonviolent": "v107388659", "crime_rate": "v107388704"},
-}
-
-# Table 35-10-0177-01: Incident-based crime stats by offence type
-OFFENCE_VECTORS: Dict[str, str] = {
-    "total_violations": "v107389050",
-    "homicide": "v107389051",
-    "assault": "v107389055",
-    "robbery": "v107389060",
-    "breaking_entering": "v107389070",
-    "theft_under_5000": "v107389075",
-    "theft_over_5000": "v107389074",
-    "motor_vehicle_theft": "v107389076",
-    "fraud": "v107389078",
-    "mischief": "v107389080",
-    "drug_offences": "v107389090",
+# Statistics/indicator strings in the CSV that map to our types
+# Table 35-10-0026-01 has a "Statistics" column with values like:
+# "Total Crime Severity Index", "Violent Crime Severity Index",
+# "Non-violent Crime Severity Index", "Total crime rate"
+CSI_STAT_MAP: Dict[str, str] = {
+    "Total Crime Severity Index": "total",
+    "Violent Crime Severity Index": "violent",
+    "Non-violent Crime Severity Index": "nonviolent",
 }
 
 
@@ -124,60 +113,70 @@ async def fetch_and_update(cache: RedisCache) -> None:
 
 
 def _fetch_statcan() -> Optional[Dict[str, Any]]:
-    """Synchronous fetch from Statistics Canada using stats_can library.
+    """Synchronous fetch from Statistics Canada using CSV bulk download.
 
-    Runs in a thread executor to avoid blocking the event loop.
-    Returns a dict of structured crime data.
+    Downloads the CSI table zip, extracts the CSV, and parses CSI values
+    by province. Runs in a thread executor.
     """
     try:
-        import stats_can
+        logger.debug("Downloading crime CSV from %s", CSI_CSV_URL)
+        resp = httpx.get(CSI_CSV_URL, timeout=120.0, follow_redirects=True)
+        resp.raise_for_status()
 
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
+            if not csv_names:
+                logger.error("No CSV file found in crime zip")
+                return None
+            csv_text = zf.read(csv_names[0]).decode("utf-8-sig")
+
+        reader = csv.DictReader(io.StringIO(csv_text))
         results: Dict[str, Any] = {}
+        best_date: Dict[str, str] = {}  # key -> best REF_DATE
 
-        # Collect all vector IDs for batch request
-        all_vectors = []
-        vector_map = {}  # vector_id -> (category, province, subkey)
+        for row in reader:
+            geo = row.get("GEO", "").strip()
+            ref_date = row.get("REF_DATE", "").strip()
+            value_str = row.get("VALUE", "").strip()
+            statistics = row.get("Statistics", "").strip()
 
-        # Provincial CSI vectors
-        for prov, types in PROVINCIAL_CSI_VECTORS.items():
-            for csi_type, vec in types.items():
-                all_vectors.append(vec)
-                if csi_type == "crime_rate":
-                    vector_map[vec] = ("crime_rate", prov, None)
-                else:
-                    vector_map[vec] = ("csi", prov, csi_type)
+            if geo not in PROVINCE_CODES or not value_str:
+                continue
 
-        # Offence type vectors (Canada-level)
-        for offence, vec in OFFENCE_VECTORS.items():
-            all_vectors.append(vec)
-            vector_map[vec] = ("offence", "CA", offence)
+            prov_code = PROVINCE_CODES[geo]
 
-        # Deduplicate vectors (some may overlap)
-        all_vectors = list(set(all_vectors))
+            try:
+                value = float(value_str)
+            except ValueError:
+                continue
 
-        # Fetch all vectors in one batch
-        df = stats_can.vectors_to_df(all_vectors, periods=1)
+            # Map the Statistics field to our CSI types
+            if statistics in CSI_STAT_MAP:
+                csi_type = CSI_STAT_MAP[statistics]
+                key = f"csi:{prov_code}:{csi_type}"
+                if key not in best_date or ref_date > best_date[key]:
+                    best_date[key] = ref_date
+                    results[key] = value
 
-        for vec_id, (category, prov, subkey) in vector_map.items():
-            col_match = [c for c in df.columns if vec_id in str(c)]
-            if col_match:
-                series = df[col_match[0]].dropna()
-                if not series.empty:
-                    val = float(series.iloc[-1])
-                    if subkey:
-                        key = f"{category}:{prov}:{subkey}"
-                    else:
-                        key = f"{category}:{prov}"
-                    results[key] = val
-                    logger.debug("StatCan crime %s = %s", key, val)
+            # Crime rate per 100k (look for "crime rate" in statistics)
+            if "crime rate" in statistics.lower() or "Police-reported crime rate" in statistics:
+                key = f"crime_rate:{prov_code}"
+                if key not in best_date or ref_date > best_date[key]:
+                    best_date[key] = ref_date
+                    results[key] = value
 
+        if results:
+            logger.info(
+                "Parsed crime data: %d indicators for latest year",
+                len(results),
+            )
         return results if results else None
 
-    except ImportError:
-        logger.error("stats_can library not available")
+    except httpx.HTTPError as exc:
+        logger.error("HTTP error downloading crime CSV: %s", exc)
         return None
     except Exception:
-        logger.exception("StatCan crime API call failed")
+        logger.exception("Failed to parse crime CSV")
         return None
 
 
@@ -196,11 +195,3 @@ def _apply_cached(data: Dict[str, Any]) -> None:
         key = f"crime_rate:{prov_code}"
         if key in data:
             crime_rate_gauge.labels(province=prov_code).set(data[key])
-
-    # Offence-type incidents (Canada level)
-    for offence in OFFENCE_VECTORS:
-        key = f"offence:CA:{offence}"
-        if key in data:
-            crime_incidents_gauge.labels(
-                province="CA", offence_type=offence
-            ).set(data[key])

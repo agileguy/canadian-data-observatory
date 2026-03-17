@@ -110,13 +110,24 @@ async def fetch_and_update(cache: RedisCache) -> None:
 
 
 def _download_statcan_csv(url: str) -> Optional[str]:
-    """Download a StatCan CSV zip and return the extracted CSV text."""
+    """Download a StatCan CSV zip and return the extracted CSV text.
+
+    Streams to a temp file to avoid memory issues with large CSVs.
+    """
+    import tempfile
+    import os
+
+    tmp_path = None
     try:
         logger.debug("Downloading CSV from %s", url)
-        resp = httpx.get(url, timeout=120.0, follow_redirects=True)
-        resp.raise_for_status()
+        tmp_path = tempfile.mktemp(suffix=".zip")
+        with httpx.stream("GET", url, timeout=120.0, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            with open(tmp_path, "wb") as f:
+                for chunk in resp.iter_bytes(8192):
+                    f.write(chunk)
 
-        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        with zipfile.ZipFile(tmp_path) as zf:
             csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
             if not csv_names:
                 logger.error("No CSV file found in zip from %s", url)
@@ -129,6 +140,9 @@ def _download_statcan_csv(url: str) -> Optional[str]:
     except Exception:
         logger.exception("Failed to download/extract CSV from %s", url)
         return None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def _fetch_all_health_data() -> Optional[Dict[str, Any]]:
@@ -256,6 +270,12 @@ def _parse_life_expectancy() -> Optional[Dict[str, Dict[str, float]]]:
     """Parse life expectancy at birth from Table 13-10-0114-01.
 
     Returns dict of province -> {sex: years} for both/male/female.
+
+    IMPORTANT: This table is a complete life table with actuarial columns.
+    The VALUE column contains different measures depending on the
+    "Element of the life table" field. We need "ex" (life expectancy)
+    at age 0 (Age group = "<1 year" or "0" or "At birth").
+    Without filtering, we'd get lx=100000 which is the radix, not years.
     """
     csv_text = _download_statcan_csv(LIFE_EXPECTANCY_URL)
     if not csv_text:
@@ -286,10 +306,32 @@ def _parse_life_expectancy() -> Optional[Dict[str, Dict[str, float]]]:
             if not sex:
                 continue
 
+            # Filter for life expectancy element (ex), not lx/dx/qx/etc.
+            # The column name varies: "Element", "Element of the life table", "Characteristics"
+            element = (
+                row.get("Element", "")
+                or row.get("Element of the life table", "")
+                or row.get("Characteristics", "")
+            ).strip().lower()
+            if "life expectancy" not in element and element != "ex":
+                continue
+
+            # Filter for age 0 / at birth
+            age_group = (
+                row.get("Age group", "")
+                or row.get("Age at the beginning of the age interval, x", "")
+            ).strip().lower()
+            if age_group and "0" not in age_group and "birth" not in age_group and "<1" not in age_group:
+                continue
+
             code = GEO_TO_CODE[geo]
             try:
                 value = float(value_str)
             except ValueError:
+                continue
+
+            # Sanity check: real life expectancy should be between 50 and 100
+            if value < 50 or value > 100:
                 continue
 
             key = f"{code}:{sex}"

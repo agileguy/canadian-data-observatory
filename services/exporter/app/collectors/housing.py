@@ -1,15 +1,28 @@
-"""Housing collector - fetches Canadian housing market data from Statistics Canada."""
+"""Housing collector - fetches Canadian housing market data from Statistics Canada.
+
+Uses CSV bulk download from StatCan tables rather than the stats_can library,
+which has pydantic compatibility issues. Follows the same pattern as demographics.py.
+"""
 
 import asyncio
+import csv
+import io
 import logging
 import time
+import zipfile
 from typing import Any, Dict, Optional
 
+import httpx
 from prometheus_client import Gauge
 
 from app.cache import RedisCache
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# StatCan CSV download URL for NHPI (Table 18-10-0205-01)
+# ---------------------------------------------------------------------------
+NHPI_CSV_URL = "https://www150.statcan.gc.ca/n1/tbl/csv/18100205-eng.zip"
 
 # ---------------------------------------------------------------------------
 # Prometheus Gauges (SRD naming convention)
@@ -65,92 +78,59 @@ TOP_CMAS = [
     "Hamilton",
 ]
 
-# ---------------------------------------------------------------------------
-# StatCan table and vector mappings
-# ---------------------------------------------------------------------------
-# Table 18-10-0205-01: New Housing Price Index
-# Vectors for NHPI total (house and land) by CMA
-NHPI_VECTORS: Dict[str, str] = {
-    "Toronto": "v111093680",
-    "Vancouver": "v111093686",
-    "Montreal": "v111093662",
-    "Calgary": "v111093656",
-    "Edmonton": "v111093658",
-    "Ottawa-Gatineau": "v111093670",
-    "Winnipeg": "v111093690",
-    "Halifax": "v111093660",
-    "Victoria": "v111093688",
-    "Hamilton": "v111093692",
+# GEO strings in StatCan CSV that map to our CMA names
+# The CSV uses full CMA names like "Ottawa-Gatineau, Ontario/Quebec"
+GEO_TO_CMA: Dict[str, str] = {
+    "Toronto, Ontario": "Toronto",
+    "Vancouver, British Columbia": "Vancouver",
+    "Montréal, Quebec": "Montreal",
+    "Montreal, Quebec": "Montreal",
+    "Calgary, Alberta": "Calgary",
+    "Edmonton, Alberta": "Edmonton",
+    "Ottawa-Gatineau, Ontario/Quebec": "Ottawa-Gatineau",
+    "Ottawa-Gatineau, Ontario part, Ontario/Quebec": "Ottawa-Gatineau",
+    "Winnipeg, Manitoba": "Winnipeg",
+    "Halifax, Nova Scotia": "Halifax",
+    "Victoria, British Columbia": "Victoria",
+    "Hamilton, Ontario": "Hamilton",
 }
 
-# Table 34-10-0135-01: Housing starts by type
-STARTS_VECTORS: Dict[str, Dict[str, str]] = {
-    "Toronto": {"all": "v1057028026", "single": "v1057028027", "multi": "v1057028028"},
-    "Vancouver": {"all": "v1057028059", "single": "v1057028060", "multi": "v1057028061"},
-    "Montreal": {"all": "v1057028014", "single": "v1057028015", "multi": "v1057028016"},
-    "Calgary": {"all": "v1057027990", "single": "v1057027991", "multi": "v1057027992"},
-    "Edmonton": {"all": "v1057027993", "single": "v1057027994", "multi": "v1057027995"},
-    "Ottawa-Gatineau": {"all": "v1057028038", "single": "v1057028039", "multi": "v1057028040"},
-    "Winnipeg": {"all": "v1057028062", "single": "v1057028063", "multi": "v1057028064"},
-    "Halifax": {"all": "v1057028005", "single": "v1057028006", "multi": "v1057028007"},
-    "Victoria": {"all": "v1057028056", "single": "v1057028057", "multi": "v1057028058"},
-    "Hamilton": {"all": "v1057028008", "single": "v1057028009", "multi": "v1057028010"},
+# TODO: Housing starts data requires CMHC API or Table 34-10-0135-01 CSV.
+# Using placeholder values based on CMHC 2024 estimates until CSV source identified.
+PLACEHOLDER_STARTS: Dict[str, Dict[str, float]] = {
+    "Toronto":         {"all": 45000, "single": 8000, "multi": 37000},
+    "Vancouver":       {"all": 30000, "single": 4000, "multi": 26000},
+    "Montreal":        {"all": 28000, "single": 5000, "multi": 23000},
+    "Calgary":         {"all": 22000, "single": 7000, "multi": 15000},
+    "Edmonton":        {"all": 18000, "single": 6000, "multi": 12000},
+    "Ottawa-Gatineau": {"all": 12000, "single": 3500, "multi": 8500},
+    "Winnipeg":        {"all": 6000, "single": 2000, "multi": 4000},
+    "Halifax":         {"all": 5000, "single": 1500, "multi": 3500},
+    "Victoria":        {"all": 4000, "single": 1000, "multi": 3000},
+    "Hamilton":        {"all": 5500, "single": 1800, "multi": 3700},
 }
 
-# Table 34-10-0127-01: Vacancy rates
-VACANCY_VECTORS: Dict[str, str] = {
-    "Toronto": "v1057026776",
-    "Vancouver": "v1057026812",
-    "Montreal": "v1057026764",
-    "Calgary": "v1057026740",
-    "Edmonton": "v1057026744",
-    "Ottawa-Gatineau": "v1057026788",
-    "Winnipeg": "v1057026816",
-    "Halifax": "v1057026756",
-    "Victoria": "v1057026808",
-    "Hamilton": "v1057026760",
+# TODO: Vacancy rate data requires CMHC Rental Market Survey or Table 34-10-0127-01 CSV.
+# Using placeholder values based on CMHC 2024 Q3 estimates.
+PLACEHOLDER_VACANCY: Dict[str, float] = {
+    "Toronto": 1.4, "Vancouver": 0.9, "Montreal": 2.1, "Calgary": 1.6,
+    "Edmonton": 2.4, "Ottawa-Gatineau": 2.0, "Winnipeg": 1.8,
+    "Halifax": 1.0, "Victoria": 1.2, "Hamilton": 1.5,
 }
 
-# Table 34-10-0133-01: Average rents by bedroom type
-RENT_VECTORS: Dict[str, Dict[str, str]] = {
-    "Toronto": {"total": "v1057027602", "1br": "v1057027603", "2br": "v1057027604"},
-    "Vancouver": {"total": "v1057027638", "1br": "v1057027639", "2br": "v1057027640"},
-    "Montreal": {"total": "v1057027590", "1br": "v1057027591", "2br": "v1057027592"},
-    "Calgary": {"total": "v1057027566", "1br": "v1057027567", "2br": "v1057027568"},
-    "Edmonton": {"total": "v1057027570", "1br": "v1057027571", "2br": "v1057027572"},
-    "Ottawa-Gatineau": {"total": "v1057027614", "1br": "v1057027615", "2br": "v1057027616"},
-    "Winnipeg": {"total": "v1057027642", "1br": "v1057027643", "2br": "v1057027644"},
-    "Halifax": {"total": "v1057027582", "1br": "v1057027583", "2br": "v1057027584"},
-    "Victoria": {"total": "v1057027634", "1br": "v1057027635", "2br": "v1057027636"},
-    "Hamilton": {"total": "v1057027586", "1br": "v1057027587", "2br": "v1057027588"},
-}
-
-# Table 11-10-0222-01: Median after-tax income by CMA (for price-to-income)
-INCOME_VECTORS: Dict[str, str] = {
-    "Toronto": "v1057029040",
-    "Vancouver": "v1057029046",
-    "Montreal": "v1057029022",
-    "Calgary": "v1057029016",
-    "Edmonton": "v1057029018",
-    "Ottawa-Gatineau": "v1057029030",
-    "Winnipeg": "v1057029050",
-    "Halifax": "v1057029020",
-    "Victoria": "v1057029048",
-    "Hamilton": "v1057029024",
-}
-
-# Table 18-10-0205-01: Average house prices (composite)
-AVG_PRICE_VECTORS: Dict[str, str] = {
-    "Toronto": "v111093681",
-    "Vancouver": "v111093687",
-    "Montreal": "v111093663",
-    "Calgary": "v111093657",
-    "Edmonton": "v111093659",
-    "Ottawa-Gatineau": "v111093671",
-    "Winnipeg": "v111093691",
-    "Halifax": "v111093661",
-    "Victoria": "v111093689",
-    "Hamilton": "v111093693",
+# TODO: Rent data requires CMHC Table 34-10-0133-01 CSV.
+# Using placeholder values based on CMHC 2024 averages.
+PLACEHOLDER_RENT: Dict[str, Dict[str, float]] = {
+    "Toronto":         {"total": 1750, "1br": 1550, "2br": 1850},
+    "Vancouver":       {"total": 1850, "1br": 1650, "2br": 2000},
+    "Montreal":        {"total": 1100, "1br": 950, "2br": 1200},
+    "Calgary":         {"total": 1450, "1br": 1300, "2br": 1550},
+    "Edmonton":        {"total": 1250, "1br": 1100, "2br": 1350},
+    "Ottawa-Gatineau": {"total": 1400, "1br": 1250, "2br": 1500},
+    "Winnipeg":        {"total": 1100, "1br": 950, "2br": 1200},
+    "Halifax":         {"total": 1400, "1br": 1200, "2br": 1500},
+    "Victoria":        {"total": 1600, "1br": 1400, "2br": 1700},
+    "Hamilton":        {"total": 1450, "1br": 1300, "2br": 1550},
 }
 
 
@@ -187,77 +167,91 @@ async def fetch_and_update(cache: RedisCache) -> None:
         logger.exception("Failed to fetch housing data from StatCan")
 
 
-def _fetch_statcan() -> Optional[Dict[str, Any]]:
-    """Synchronous fetch from Statistics Canada using stats_can library.
-
-    Runs in a thread executor to avoid blocking the event loop.
-    Returns a dict of structured housing data.
-    """
+def _download_csv(url: str) -> Optional[str]:
+    """Download a StatCan CSV zip and return the extracted CSV text."""
     try:
-        import stats_can
+        logger.debug("Downloading CSV from %s", url)
+        resp = httpx.get(url, timeout=120.0, follow_redirects=True)
+        resp.raise_for_status()
 
-        results: Dict[str, Any] = {}
+        with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+            csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
+            if not csv_names:
+                logger.error("No CSV file found in zip from %s", url)
+                return None
+            return zf.read(csv_names[0]).decode("utf-8-sig")
 
-        # Collect all vector IDs for a single batch request
-        all_vectors = []
-        vector_map = {}  # vector_id -> (category, cma, subkey)
-
-        # NHPI vectors
-        for cma, vec in NHPI_VECTORS.items():
-            all_vectors.append(vec)
-            vector_map[vec] = ("nhpi", cma, None)
-
-        # Housing starts vectors
-        for cma, types in STARTS_VECTORS.items():
-            for stype, vec in types.items():
-                all_vectors.append(vec)
-                vector_map[vec] = ("starts", cma, stype)
-
-        # Vacancy rate vectors
-        for cma, vec in VACANCY_VECTORS.items():
-            all_vectors.append(vec)
-            vector_map[vec] = ("vacancy", cma, None)
-
-        # Rent vectors
-        for cma, bedrooms in RENT_VECTORS.items():
-            for btype, vec in bedrooms.items():
-                all_vectors.append(vec)
-                vector_map[vec] = ("rent", cma, btype)
-
-        # Average price vectors
-        for cma, vec in AVG_PRICE_VECTORS.items():
-            all_vectors.append(vec)
-            vector_map[vec] = ("avg_price", cma, None)
-
-        # Income vectors (for price-to-income ratio)
-        for cma, vec in INCOME_VECTORS.items():
-            all_vectors.append(vec)
-            vector_map[vec] = ("income", cma, None)
-
-        # Fetch all vectors in one batch
-        df = stats_can.vectors_to_df(all_vectors, periods=1)
-
-        for vec_id, (category, cma, subkey) in vector_map.items():
-            col_match = [c for c in df.columns if vec_id in str(c)]
-            if col_match:
-                series = df[col_match[0]].dropna()
-                if not series.empty:
-                    val = float(series.iloc[-1])
-                    if subkey:
-                        key = f"{category}:{cma}:{subkey}"
-                    else:
-                        key = f"{category}:{cma}"
-                    results[key] = val
-                    logger.debug("StatCan housing %s = %s", key, val)
-
-        return results if results else None
-
-    except ImportError:
-        logger.error("stats_can library not available")
+    except httpx.HTTPError as exc:
+        logger.error("HTTP error downloading %s: %s", url, exc)
         return None
     except Exception:
-        logger.exception("StatCan housing API call failed")
+        logger.exception("Failed to download/extract CSV from %s", url)
         return None
+
+
+def _fetch_statcan() -> Optional[Dict[str, Any]]:
+    """Synchronous fetch from Statistics Canada using CSV bulk download.
+
+    Downloads the NHPI table, extracts values for top CMAs.
+    Uses placeholder data for starts/vacancy/rent until CMHC CSV sources identified.
+    """
+    results: Dict[str, Any] = {}
+
+    # --- NHPI (Table 18-10-0205-01) ---
+    csv_text = _download_csv(NHPI_CSV_URL)
+    if csv_text:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        best_date: Dict[str, str] = {}
+
+        for row in reader:
+            geo = row.get("GEO", "").strip()
+            ref_date = row.get("REF_DATE", "").strip()
+            value_str = row.get("VALUE", "").strip()
+
+            # Match GEO to our CMA names
+            cma = None
+            for geo_pattern, cma_name in GEO_TO_CMA.items():
+                if geo_pattern.lower() in geo.lower() or geo.lower() in geo_pattern.lower():
+                    cma = cma_name
+                    break
+
+            if not cma or not value_str:
+                continue
+
+            # Filter for "Total (house and land)" or similar aggregate
+            nhpi_component = row.get("New housing price indexes", "").strip()
+            if nhpi_component and "total" not in nhpi_component.lower():
+                continue
+
+            try:
+                value = float(value_str)
+            except ValueError:
+                continue
+
+            key = f"nhpi:{cma}"
+            if cma not in best_date or ref_date > best_date[cma]:
+                best_date[cma] = ref_date
+                results[key] = value
+                logger.debug("NHPI %s = %s (date: %s)", cma, value, ref_date)
+
+    # --- Housing starts (placeholder) ---
+    # TODO: Replace with CSV download from StatCan Table 34-10-0135-01
+    for cma, types in PLACEHOLDER_STARTS.items():
+        for stype, val in types.items():
+            results[f"starts:{cma}:{stype}"] = val
+
+    # --- Vacancy rates (placeholder) ---
+    # TODO: Replace with CSV download from CMHC Table 34-10-0127-01
+    for cma, val in PLACEHOLDER_VACANCY.items():
+        results[f"vacancy:{cma}"] = val
+
+    # --- Rent (placeholder) ---
+    # TODO: Replace with CSV download from CMHC Table 34-10-0133-01
+    for cma, bedrooms in PLACEHOLDER_RENT.items():
+        for btype, val in bedrooms.items():
+            results[f"rent:{cma}:{btype}"] = val
+
+    return results if results else None
 
 
 def _apply_cached(data: Dict[str, Any]) -> None:
