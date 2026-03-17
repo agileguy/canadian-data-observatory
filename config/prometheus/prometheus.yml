@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+  - job_name: "cdo-exporter"
+    scrape_interval: 60s
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["exporter:8000"]
+        labels:
+          service: "cdo-exporter"
+
+  - job_name: "cdo-exporter-weather"
+    scrape_interval: 15m
+    metrics_path: /metrics/weather
+    static_configs:
+      - targets: ["exporter:8000"]
+        labels:
+          service: "cdo-exporter"
+          domain: "weather"

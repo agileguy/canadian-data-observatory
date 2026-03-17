@@ -1,0 +1,31 @@
+groups:
+  - name: cdo_data_freshness
+    rules:
+      - alert: ClimateDataStale
+        expr: (time() - cdo_climate_last_update_timestamp) > 3600
+        for: 5m
+        labels:
+          severity: warning
+          domain: climate
+        annotations:
+          summary: "Climate data is stale"
+          description: "Climate data has not been updated for more than 1 hour. Last update was {{ $value | humanizeDuration }} ago."
+
+      - alert: EconomicDataStale
+        expr: (time() - cdo_economy_last_update_timestamp) > 2592000
+        for: 5m
+        labels:
+          severity: warning
+          domain: economy
+        annotations:
+          summary: "Economic data is stale"
+          description: "Economic data has not been updated for more than 30 days. Last update was {{ $value | humanizeDuration }} ago."
+
+      - alert: ExporterDown
+        expr: up{job="cdo-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CDO Exporter is down"
+          description: "The CDO exporter service has been unreachable for more than 5 minutes."
