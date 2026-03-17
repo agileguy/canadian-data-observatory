@@ -107,8 +107,11 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - LOG_LEVEL=${CDO_LOG_LEVEL:-INFO}
       - VANCOUVER_API_KEY=${CDO_VANCOUVER_API_KEY:-}
+      - DATABASE_URL=postgresql://${CDO_POSTGRES_USER:-cdo}:${CDO_POSTGRES_PASSWORD:-cdo_secret}@postgres:5432/${CDO_POSTGRES_DB:-cdo}
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - cdo-net

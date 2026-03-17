@@ -1,0 +1,313 @@
+{
+  "uid": "cdo-health",
+  "title": "Health and Healthcare",
+  "description": "Canadian health indicators: spending, life expectancy, workforce, and wait times",
+  "tags": ["cdo", "health", "canada", "healthcare"],
+  "timezone": "America/Toronto",
+  "editable": true,
+  "refresh": "24h",
+  "time": {
+    "from": "now-10y",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "province",
+        "type": "custom",
+        "label": "Province",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": ["$__all"] },
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "Canada", "value": "CA", "selected": false },
+          { "text": "Ontario", "value": "ON", "selected": false },
+          { "text": "Quebec", "value": "QC", "selected": false },
+          { "text": "British Columbia", "value": "BC", "selected": false },
+          { "text": "Alberta", "value": "AB", "selected": false },
+          { "text": "Manitoba", "value": "MB", "selected": false },
+          { "text": "Saskatchewan", "value": "SK", "selected": false },
+          { "text": "Nova Scotia", "value": "NS", "selected": false },
+          { "text": "New Brunswick", "value": "NB", "selected": false },
+          { "text": "Newfoundland", "value": "NL", "selected": false },
+          { "text": "PEI", "value": "PE", "selected": false }
+        ],
+        "query": "CA,ON,QC,BC,AB,MB,SK,NS,NB,NL,PE"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Health Spending per Capita",
+      "description": "Health expenditure per capita by province (CAD)",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_health_spending_per_capita_dollars{province=~\"$province\"}",
+          "legendFormat": "{{ province }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "currencyCAD",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 5000 },
+              { "color": "orange", "value": 7000 },
+              { "color": "red", "value": 10000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "always",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Life Expectancy Trend",
+      "description": "Life expectancy at birth by province and sex",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_health_life_expectancy_years{province=~\"$province\", sex=\"both\"}",
+          "legendFormat": "{{ province }} - Both",
+          "refId": "A"
+        },
+        {
+          "expr": "cdo_health_life_expectancy_years{province=~\"$province\", sex=\"female\"}",
+          "legendFormat": "{{ province }} - Female",
+          "refId": "B"
+        },
+        {
+          "expr": "cdo_health_life_expectancy_years{province=~\"$province\", sex=\"male\"}",
+          "legendFormat": "{{ province }} - Male",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "gradientMode": "scheme",
+            "spanNulls": true,
+            "axisSoftMin": 70,
+            "axisSoftMax": 90
+          },
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Physicians per 100K Population",
+      "description": "Choropleth map of physician density by province (PostGIS)",
+      "type": "geomap",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 8 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT p.province_code AS abbr, p.name_en AS name, ST_AsGeoJSON(ST_Simplify(p.geom, 0.01))::json AS geojson FROM geo.provinces p",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-GrYlRd" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 150 },
+              { "color": "orange", "value": 250 },
+              { "color": "red", "value": 350 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 56,
+          "lon": -96,
+          "zoom": 3
+        },
+        "basemap": {
+          "type": "default"
+        },
+        "layers": [
+          {
+            "type": "geojson",
+            "name": "Provinces",
+            "config": {
+              "src": {
+                "mode": "column",
+                "column": "geojson"
+              },
+              "style": {
+                "color": { "field": "abbr", "fixed": "dark-green" },
+                "opacity": 0.6,
+                "fillOpacity": 0.4
+              }
+            },
+            "tooltip": true,
+            "location": {
+              "mode": "geojson",
+              "geojson": "geojson"
+            }
+          }
+        ],
+        "tooltip": { "mode": "details" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Wait Times by Procedure",
+      "description": "Median specialist wait times by province and procedure (days)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_health_wait_time_days{province=~\"$province\"}",
+          "legendFormat": "{{ province }} - {{ procedure }}",
+          "refId": "A",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "d",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 30 },
+              { "color": "orange", "value": 90 },
+              { "color": "red", "value": 180 }
+            ]
+          },
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Value", "desc": true }],
+        "footer": { "show": false }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true },
+            "renameByName": {
+              "province": "Province",
+              "procedure": "Procedure",
+              "Value": "Wait (days)"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Health Workforce",
+      "description": "Physicians and nurses per 100K population by province",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_health_physicians_per_100k{province=~\"$province\"}",
+          "legendFormat": "Physicians - {{ province }}",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "cdo_health_nurses_per_100k{province=~\"$province\"}",
+          "legendFormat": "Nurses - {{ province }}",
+          "refId": "B",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "/Physicians/" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byRegexp", "options": "/Nurses/" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "always",
+        "stacking": "normal",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}
