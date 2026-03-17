@@ -1,3 +1,9 @@
+# CDO-specific
+data/cache/*
+!data/cache/.gitkeep
+backups/*
+!backups/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

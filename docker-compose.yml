@@ -1,0 +1,145 @@
+version: "3.9"
+
+networks:
+  cdo-net:
+    driver: bridge
+
+volumes:
+  grafana-data:
+  prometheus-data:
+  postgres-data:
+  redis-data:
+
+services:
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    container_name: cdo-grafana
+    ports:
+      - "${CDO_GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${CDO_GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${CDO_GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - cdo-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: cdo-prometheus
+    ports:
+      - "${CDO_PROMETHEUS_PORT:-9090}:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=365d"
+      - "--storage.tsdb.retention.size=10GB"
+      - "--web.enable-lifecycle"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/rules:/etc/prometheus/rules:ro
+    networks:
+      - cdo-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: cdo-postgres
+    ports:
+      - "${CDO_POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=${CDO_POSTGRES_DB:-cdo}
+      - POSTGRES_USER=${CDO_POSTGRES_USER:-cdo}
+      - POSTGRES_PASSWORD=${CDO_POSTGRES_PASSWORD:-cdo_secret}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./config/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - cdo-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CDO_POSTGRES_USER:-cdo} -d ${CDO_POSTGRES_DB:-cdo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: cdo-redis
+    ports:
+      - "${CDO_REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - cdo-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  exporter:
+    build:
+      context: ./services/exporter
+      dockerfile: Dockerfile
+    container_name: cdo-exporter
+    ports:
+      - "${CDO_EXPORTER_PORT:-8000}:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${CDO_LOG_LEVEL:-INFO}
+      - VANCOUVER_API_KEY=${CDO_VANCOUVER_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - cdo-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  loader:
+    build:
+      context: ./services/loader
+      dockerfile: Dockerfile
+    container_name: cdo-loader
+    environment:
+      - DATABASE_URL=postgresql://${CDO_POSTGRES_USER:-cdo}:${CDO_POSTGRES_PASSWORD:-cdo_secret}@postgres:5432/${CDO_POSTGRES_DB:-cdo}
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${CDO_LOG_LEVEL:-INFO}
+      - VANCOUVER_API_KEY=${CDO_VANCOUVER_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - cdo-net
+    restart: unless-stopped

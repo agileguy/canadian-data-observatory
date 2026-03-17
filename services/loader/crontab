@@ -1,0 +1,23 @@
+# CDO Loader - Scheduled data loading jobs
+# m h dom mon dow command
+
+# Economy: Monthly StatCan indicators (1st of month, 6am ET)
+0 6 1 * * cd /app && python -m app.main economy >> /var/log/cdo-loader.log 2>&1
+
+# Weather: Hourly climate observations (every hour)
+0 * * * * cd /app && python -m app.main weather >> /var/log/cdo-loader.log 2>&1
+
+# Transit: GTFS feeds (weekly, Sunday 3am ET)
+0 3 * * 0 cd /app && python -m app.main transit >> /var/log/cdo-loader.log 2>&1
+
+# Census: Population and demographics (quarterly, 1st of Jan/Apr/Jul/Oct)
+0 4 1 1,4,7,10 * cd /app && python -m app.main census >> /var/log/cdo-loader.log 2>&1
+
+# Municipal: Building permits, crime (daily, 5am ET)
+0 5 * * * cd /app && python -m app.main municipal >> /var/log/cdo-loader.log 2>&1
+
+# Geo: Boundary files (monthly, 15th at 2am)
+0 2 15 * * cd /app && python -m app.main geo >> /var/log/cdo-loader.log 2>&1
+
+# Infrastructure: Building footprints (weekly, Saturday 4am)
+0 4 * * 6 cd /app && python -m app.main infrastructure >> /var/log/cdo-loader.log 2>&1
