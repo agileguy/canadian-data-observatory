@@ -1,0 +1,270 @@
+{
+  "uid": "cdo-immigration",
+  "title": "Immigration",
+  "description": "Canadian immigration data from IRCC - permanent residents, temporary residents, refugees, and citizenship",
+  "tags": ["cdo", "immigration", "canada", "ircc"],
+  "timezone": "America/Toronto",
+  "editable": true,
+  "refresh": "24h",
+  "time": {
+    "from": "now-10y",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "province",
+        "type": "custom",
+        "label": "Province",
+        "current": { "text": "Canada", "value": "CA" },
+        "options": [
+          { "text": "Canada", "value": "CA", "selected": true },
+          { "text": "Ontario", "value": "ON", "selected": false },
+          { "text": "Quebec", "value": "QC", "selected": false },
+          { "text": "British Columbia", "value": "BC", "selected": false },
+          { "text": "Alberta", "value": "AB", "selected": false },
+          { "text": "Manitoba", "value": "MB", "selected": false },
+          { "text": "Saskatchewan", "value": "SK", "selected": false },
+          { "text": "Nova Scotia", "value": "NS", "selected": false },
+          { "text": "New Brunswick", "value": "NB", "selected": false },
+          { "text": "Newfoundland", "value": "NL", "selected": false },
+          { "text": "PEI", "value": "PE", "selected": false }
+        ],
+        "query": "CA,ON,QC,BC,AB,MB,SK,NS,NB,NL,PE"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Total Immigration Trend",
+      "description": "Permanent residents, temporary residents, and refugee claimants over time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_immigration_permanent_residents_total{province=\"$province\"}",
+          "legendFormat": "Permanent Residents ({{ year }})",
+          "refId": "A"
+        },
+        {
+          "expr": "cdo_immigration_temporary_residents_total{province=\"$province\"}",
+          "legendFormat": "Temporary Residents ({{ year }})",
+          "refId": "B"
+        },
+        {
+          "expr": "cdo_immigration_refugees_total{province=\"$province\"}",
+          "legendFormat": "Refugees ({{ year }})",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "stacking": { "mode": "normal", "group": "A" },
+            "gradientMode": "scheme",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Immigration by Province",
+      "description": "Permanent residents by province of intended destination",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_immigration_permanent_residents_total",
+          "legendFormat": "{{ province }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 80,
+            "gradientMode": "scheme",
+            "axisSoftMin": 0
+          },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "vertical",
+        "barWidth": 0.8,
+        "groupWidth": 0.7,
+        "showValue": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Top Source Countries",
+      "description": "Top 15 source countries for permanent residents",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "topk(15, cdo_immigration_by_source_country_total)",
+          "legendFormat": "{{ country }}",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-BlYlRd" },
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 20000 },
+              { "color": "red", "value": 50000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      }
+    },
+    {
+      "id": 4,
+      "title": "Citizenship Grants",
+      "description": "Annual citizenship grants over time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_immigration_citizenship_grants_total",
+          "legendFormat": "Grants ({{ year }})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "dark-green", "mode": "fixed" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "gradientMode": "scheme",
+            "spanNulls": true,
+            "axisSoftMin": 0
+          },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Immigration by Category",
+      "description": "Breakdown of immigration by category (latest year)",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_immigration_permanent_residents_total{province=\"CA\"}",
+          "legendFormat": "Permanent Residents",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "expr": "cdo_immigration_temporary_residents_total{province=\"CA\"}",
+          "legendFormat": "Temporary Residents",
+          "refId": "B",
+          "instant": true
+        },
+        {
+          "expr": "cdo_immigration_refugees_total{province=\"CA\"}",
+          "legendFormat": "Refugees",
+          "refId": "C",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "pieType": "pie",
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "right" }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

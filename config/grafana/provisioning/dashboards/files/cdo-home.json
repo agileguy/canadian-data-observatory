@@ -132,7 +132,7 @@
     {
       "id": 4,
       "title": "Population",
-      "description": "Total Canadian population (Phase 2)",
+      "description": "Total Canadian population estimate",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -149,7 +149,6 @@
           "color": { "mode": "thresholds" },
           "unit": "short",
           "decimals": 0,
-          "noValue": "Phase 2",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -170,13 +169,13 @@
     {
       "id": 5,
       "title": "Avg Home Price",
-      "description": "Average residential home price (Phase 2)",
+      "description": "Average residential home price (Toronto)",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "cdo_housing_avg_price_cad{province=\"CA\"}",
+          "expr": "cdo_housing_avg_price_dollars{cma=\"Toronto\"}",
           "legendFormat": "Avg Price",
           "refId": "A",
           "instant": true
@@ -187,7 +186,6 @@
           "color": { "mode": "thresholds" },
           "unit": "currencyCAD",
           "decimals": 0,
-          "noValue": "Phase 2",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -251,13 +249,13 @@
     {
       "id": 7,
       "title": "Crime Severity Index",
-      "description": "National Crime Severity Index (Phase 2)",
+      "description": "National Crime Severity Index",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "cdo_justice_crime_severity_index{province=\"CA\"}",
+          "expr": "cdo_crime_severity_index{province=\"CA\", type=\"total\"}",
           "legendFormat": "CSI",
           "refId": "A",
           "instant": true
@@ -268,7 +266,6 @@
           "color": { "mode": "thresholds" },
           "unit": "short",
           "decimals": 1,
-          "noValue": "Phase 2",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -291,13 +288,13 @@
     {
       "id": 8,
       "title": "Immigration",
-      "description": "Annual immigration numbers (Phase 2)",
+      "description": "Annual permanent residents admitted (national)",
       "type": "stat",
       "gridPos": { "h": 4, "w": 6, "x": 18, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "cdo_demographics_immigration_total{province=\"CA\"}",
+          "expr": "cdo_immigration_permanent_residents_total{province=\"CA\"}",
           "legendFormat": "Immigration",
           "refId": "A",
           "instant": true
@@ -308,7 +305,6 @@
           "color": { "mode": "thresholds" },
           "unit": "short",
           "decimals": 0,
-          "noValue": "Phase 2",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -345,6 +341,20 @@
           "expr": "cdo_climate_last_update_timestamp",
           "legendFormat": "Climate",
           "refId": "B",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "cdo_immigration_last_update_timestamp",
+          "legendFormat": "Immigration",
+          "refId": "C",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "expr": "cdo_demographics_last_update_timestamp",
+          "legendFormat": "Demographics",
+          "refId": "D",
           "instant": true,
           "format": "table"
         }

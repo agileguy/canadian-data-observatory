@@ -21,6 +21,46 @@ groups:
           summary: "Economic data is stale"
           description: "Economic data has not been updated for more than 30 days. Last update was {{ $value | humanizeDuration }} ago."
 
+      - alert: HousingDataStale
+        expr: (time() - cdo_housing_last_update_timestamp) > 2592000
+        for: 5m
+        labels:
+          severity: warning
+          domain: housing
+        annotations:
+          summary: "Housing data is stale"
+          description: "Housing data has not been updated for more than 30 days. Last update was {{ $value | humanizeDuration }} ago."
+
+      - alert: CrimeDataStale
+        expr: (time() - cdo_crime_last_update_timestamp) > 31536000
+        for: 5m
+        labels:
+          severity: warning
+          domain: crime
+        annotations:
+          summary: "Crime data is stale"
+          description: "Crime data has not been updated for more than 1 year. Last update was {{ $value | humanizeDuration }} ago."
+
+      - alert: ImmigrationDataStale
+        expr: (time() - cdo_immigration_last_update_timestamp) > 2592000
+        for: 5m
+        labels:
+          severity: warning
+          domain: immigration
+        annotations:
+          summary: "Immigration data is stale"
+          description: "Immigration data has not been updated for more than 30 days. Last update was {{ $value | humanizeDuration }} ago."
+
+      - alert: DemographicsDataStale
+        expr: (time() - cdo_demographics_last_update_timestamp) > 7776000
+        for: 5m
+        labels:
+          severity: warning
+          domain: demographics
+        annotations:
+          summary: "Demographics data is stale"
+          description: "Demographics data has not been updated for more than 90 days. Last update was {{ $value | humanizeDuration }} ago."
+
       - alert: ExporterDown
         expr: up{job="cdo-exporter"} == 0
         for: 5m
