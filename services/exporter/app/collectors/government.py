@@ -245,11 +245,11 @@ async def _fetch_grant_aggregates(
 
 def _extract_fiscal_year(record: dict) -> Optional[str]:
     """Extract fiscal year from a CKAN record, trying common field names."""
-    for field in ("fiscal_year", "year", "reporting_period"):
+    # Try explicit fiscal_year field first
+    for field in ("fiscal_year", "year"):
         val = record.get(field)
         if val:
             val = str(val).strip()
-            # Handle formats like "2024-2025" or "2024-25"
             if "-" in val and len(val) >= 7:
                 parts = val.split("-")
                 try:
@@ -259,12 +259,34 @@ def _extract_fiscal_year(record: dict) -> Optional[str]:
                     return f"{start}-{end}"
                 except (ValueError, IndexError):
                     pass
-            # Handle bare year like "2024" -> "2024-2025"
             try:
                 y = int(val[:4])
                 return f"{y}-{y + 1}"
             except ValueError:
                 pass
+
+    # Derive from contract_date (format: "2018-04-01")
+    for field in ("contract_date", "contract_period_start", "delivery_date"):
+        val = record.get(field)
+        if val:
+            val = str(val).strip()
+            try:
+                year = int(val[:4])
+                month = int(val[5:7])
+                # Canadian fiscal year: Apr-Mar. If month >= 4, FY starts this year.
+                fy_start = year if month >= 4 else year - 1
+                return f"{fy_start}-{fy_start + 1}"
+            except (ValueError, IndexError):
+                pass
+
+    # Try reference_number (format: "C-2018-2019-Q1-00069")
+    ref = record.get("reference_number", "")
+    if ref:
+        import re
+        m = re.search(r"(\d{4})-(\d{4})", ref)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}"
+
     return None
 
 

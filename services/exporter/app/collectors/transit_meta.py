@@ -62,7 +62,7 @@ def _query_latest_transit_load() -> Optional[float]:
             with conn.cursor() as cur:
                 # Check if the transit schema and stops table exist
                 cur.execute(
-                    "SELECT EXTRACT(EPOCH FROM MAX(loaded_at)) "
+                    "SELECT EXTRACT(EPOCH FROM MAX(created_at)) "
                     "FROM transit.stops"
                 )
                 row = cur.fetchone()

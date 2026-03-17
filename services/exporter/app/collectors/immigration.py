@@ -174,13 +174,14 @@ async def _fetch_all_ircc() -> Optional[Dict[str, Any]]:
         province_field = _detect_field(
             results["permanent_residents"],
             ["Province/Territory of intended destination", "Province/Territory",
-             "Province / Territory of Intended Destination", "province_territory"],
+             "Province / Territory of Intended Destination", "province_territory",
+             "EN_PROVINCE_TERRITORY"],
         )
         year_field = _detect_field(
-            results["permanent_residents"], ["Year", "year", "YEAR"]
+            results["permanent_residents"], ["Year", "year", "YEAR", "EN_YEAR"]
         )
         value_field = _detect_field(
-            results["permanent_residents"], ["Value", "value", "VALUE", "Persons"]
+            results["permanent_residents"], ["Value", "value", "VALUE", "Persons", "TOTAL", "Total"]
         )
         aggregated["permanent_residents"] = _aggregate_by_province_year(
             results["permanent_residents"],
@@ -205,13 +206,14 @@ async def _fetch_all_ircc() -> Optional[Dict[str, Any]]:
         province_field = _detect_field(
             results["temporary_residents"],
             ["Province/Territory", "Province/Territory of temporary residence",
-             "Province / Territory", "province_territory"],
+             "Province / Territory", "province_territory",
+             "EN_PROVINCE_TERRITORY"],
         )
         year_field = _detect_field(
-            results["temporary_residents"], ["Year", "year", "YEAR"]
+            results["temporary_residents"], ["Year", "year", "YEAR", "EN_YEAR"]
         )
         value_field = _detect_field(
-            results["temporary_residents"], ["Value", "value", "VALUE", "Persons"]
+            results["temporary_residents"], ["Value", "value", "VALUE", "Persons", "TOTAL", "Total"]
         )
         aggregated["temporary_residents"] = _aggregate_by_province_year(
             results["temporary_residents"],
@@ -224,13 +226,14 @@ async def _fetch_all_ircc() -> Optional[Dict[str, Any]]:
         province_field = _detect_field(
             results["refugee_claimants"],
             ["Province/Territory of claim", "Province/Territory",
-             "Province / Territory of Claim", "province_territory"],
+             "Province / Territory of Claim", "province_territory",
+             "EN_PROVINCE_TERRITORY"],
         )
         year_field = _detect_field(
-            results["refugee_claimants"], ["Year", "year", "YEAR"]
+            results["refugee_claimants"], ["Year", "year", "YEAR", "EN_YEAR"]
         )
         value_field = _detect_field(
-            results["refugee_claimants"], ["Value", "value", "VALUE", "Persons"]
+            results["refugee_claimants"], ["Value", "value", "VALUE", "Persons", "TOTAL", "Total"]
         )
         aggregated["refugees"] = _aggregate_by_province_year(
             results["refugee_claimants"],
@@ -241,10 +244,10 @@ async def _fetch_all_ircc() -> Optional[Dict[str, Any]]:
 
     if "citizenship_grants" in results:
         year_field = _detect_field(
-            results["citizenship_grants"], ["Year", "year", "YEAR"]
+            results["citizenship_grants"], ["Year", "year", "YEAR", "EN_YEAR"]
         )
         value_field = _detect_field(
-            results["citizenship_grants"], ["Value", "value", "VALUE", "Persons"]
+            results["citizenship_grants"], ["Value", "value", "VALUE", "Persons", "TOTAL", "Total"]
         )
         aggregated["citizenship_grants"] = _aggregate_by_year(
             results["citizenship_grants"],
@@ -358,7 +361,10 @@ async def _download_resource_csv(
             resp.raise_for_status()
             text = resp.text
 
-        reader = csv.DictReader(io.StringIO(text))
+        # Auto-detect delimiter: IRCC CSVs are often tab-delimited
+        first_line = text.split("\n", 1)[0]
+        delimiter = "\t" if "\t" in first_line else ","
+        reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
         records = list(reader)
         logger.info(
             "Downloaded %d records from CSV resource in package %s",

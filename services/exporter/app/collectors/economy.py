@@ -266,19 +266,18 @@ def _fetch_statcan() -> Optional[Dict[str, Any]]:
         results["retail_sales"] = val
 
     # --- Interest Rates (Table 10-10-0122-01) ---
-    # Try "Bank rate" first; fall back to "overnight" if not found.
-    # The table can be large, so we use a longer timeout via the helper.
+    # Column is "Rates" (not "Financial market statistics")
     val = _download_and_extract_latest(
         STATCAN_TABLES["interest_rates"],
         member_filter="Bank rate",
-        member_field="Financial market statistics",
+        member_field="Rates",
         timeout=180.0,
     )
     if val is None:
         val = _download_and_extract_latest(
             STATCAN_TABLES["interest_rates"],
             member_filter="overnight money market",
-            member_field="Financial market statistics",
+            member_field="Rates",
             timeout=180.0,
         )
     if val is not None:
