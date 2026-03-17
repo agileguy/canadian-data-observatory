@@ -1,0 +1,345 @@
+{
+  "uid": "cdo-demographics",
+  "title": "Demographics and Population",
+  "description": "Canadian population demographics, age distribution, and migration data",
+  "tags": ["cdo", "demographics", "census", "population"],
+  "timezone": "America/Toronto",
+  "editable": true,
+  "refresh": "24h",
+  "time": {
+    "from": "now-10y",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "province",
+        "type": "custom",
+        "label": "Province",
+        "current": { "text": "CA", "value": "CA" },
+        "options": [
+          { "text": "Canada", "value": "CA", "selected": true },
+          { "text": "Ontario", "value": "ON", "selected": false },
+          { "text": "Quebec", "value": "QC", "selected": false },
+          { "text": "British Columbia", "value": "BC", "selected": false },
+          { "text": "Alberta", "value": "AB", "selected": false },
+          { "text": "Manitoba", "value": "MB", "selected": false },
+          { "text": "Saskatchewan", "value": "SK", "selected": false },
+          { "text": "Nova Scotia", "value": "NS", "selected": false },
+          { "text": "New Brunswick", "value": "NB", "selected": false },
+          { "text": "Newfoundland", "value": "NL", "selected": false },
+          { "text": "PEI", "value": "PE", "selected": false }
+        ],
+        "query": "CA,ON,QC,BC,AB,MB,SK,NS,NB,NL,PE"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Population by Province",
+      "description": "Choropleth map of provincial population using PostGIS geometry",
+      "type": "geomap",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT p.province_code AS abbr, p.name_en AS name, pop.population, ST_AsGeoJSON(ST_Simplify(p.geom, 0.01))::json AS geojson FROM geo.provinces p JOIN census.population pop ON pop.geo_uid = p.province_code WHERE pop.year = (SELECT MAX(year) FROM census.population WHERE geo_level = 'province')",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-GrYlRd" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1000000 },
+              { "color": "orange", "value": 5000000 },
+              { "color": "red", "value": 10000000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 56,
+          "lon": -96,
+          "zoom": 3
+        },
+        "basemap": {
+          "type": "default"
+        },
+        "layers": [
+          {
+            "type": "geojson",
+            "name": "Provinces",
+            "config": {
+              "src": {
+                "mode": "column",
+                "column": "geojson"
+              },
+              "style": {
+                "color": { "field": "population", "fixed": "dark-green" },
+                "opacity": 0.6,
+                "fillOpacity": 0.4
+              }
+            },
+            "tooltip": true,
+            "location": {
+              "mode": "geojson",
+              "geojson": "geojson"
+            }
+          }
+        ],
+        "tooltip": { "mode": "details" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Population Growth Rate",
+      "description": "Year-over-year population growth rate by province",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_census_population_growth_rate{province=\"$province\"}",
+          "legendFormat": "Growth Rate ({{ province }})",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "spanNulls": true
+          },
+          "unit": "percent",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Age Pyramid",
+      "description": "Population distribution by age group and sex",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT age_group, SUM(CASE WHEN sex = 'M' THEN -count ELSE 0 END) AS male, SUM(CASE WHEN sex = 'F' THEN count ELSE 0 END) AS female FROM census.age_distribution WHERE geo_uid = '$province' AND year = (SELECT MAX(year) FROM census.age_distribution WHERE geo_uid = '$province') AND sex IN ('M', 'F') GROUP BY age_group ORDER BY age_group",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "stacking": { "mode": "none" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "male" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "female" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "age_group",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Top 10 CMAs by Population",
+      "description": "Largest Census Metropolitan Areas by population",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT c.cma_name, c.population_2021 AS population FROM geo.cmas c WHERE c.cma_type = 'B' AND c.population_2021 IS NOT NULL ORDER BY c.population_2021 DESC LIMIT 10",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "semi-dark-orange", "mode": "fixed" },
+          "custom": {
+            "fillOpacity": 80,
+            "gradientMode": "scheme"
+          },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "cma_name",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "hidden", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Net Migration",
+      "description": "Net interprovincial and international migration",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_census_net_migration_interprovincial{province=\"$province\"}",
+          "legendFormat": "Interprovincial",
+          "refId": "A"
+        },
+        {
+          "expr": "cdo_census_net_migration_international{province=\"$province\"}",
+          "legendFormat": "International",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": true
+          },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 0 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Births vs Deaths",
+      "description": "Natural population change: births and deaths over time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "cdo_census_births{province=\"$province\"}",
+          "legendFormat": "Births",
+          "refId": "A"
+        },
+        {
+          "expr": "cdo_census_deaths{province=\"$province\"}",
+          "legendFormat": "Deaths",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "spanNulls": true
+          },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Births" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } },
+              { "id": "custom.axisPlacement", "value": "left" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Deaths" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+              { "id": "custom.axisPlacement", "value": "right" }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

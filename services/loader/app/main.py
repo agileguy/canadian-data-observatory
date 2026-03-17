@@ -50,25 +50,103 @@ def transit():
 @cli.command()
 def census():
     """Load census population and demographics data."""
+    from app.loaders.demographics import load_demographics
+
     logger = logging.getLogger(__name__)
-    logger.info("Loading census data...")
-    click.echo("Census loader: not yet implemented")
+    logger.info("Loading census demographics data...")
+    results = load_demographics()
+    click.echo(
+        f"Demographics loaded: {results['population']} population records, "
+        f"{results['age_distribution']} age distribution records"
+    )
 
 
 @cli.command()
 def municipal():
-    """Load municipal open data (permits, crime, contracts)."""
+    """Load all municipal open data (permits, crime, contracts)."""
+    from app.loaders.calgary import load_building_permits as calgary_permits
+    from app.loaders.calgary import load_crime_incidents as calgary_crime
+    from app.loaders.toronto import load_building_permits as toronto_permits
+    from app.loaders.vancouver import load_crime_incidents as vancouver_crime
+
     logger = logging.getLogger(__name__)
-    logger.info("Loading municipal data...")
-    click.echo("Municipal loader: not yet implemented")
+    logger.info("Loading all municipal data...")
+
+    total = 0
+    total += toronto_permits()
+    total += vancouver_crime()
+    total += calgary_crime()
+    total += calgary_permits()
+
+    logger.info("Municipal data loading complete: %d total rows", total)
+    click.echo(f"Municipal data loaded: {total} rows across all cities")
+
+
+@cli.command("load-toronto")
+def load_toronto():
+    """Load Toronto building permits from CKAN portal."""
+    from app.loaders.toronto import load_building_permits
+
+    logger = logging.getLogger(__name__)
+    logger.info("Loading Toronto building permits...")
+    count = load_building_permits()
+    click.echo(f"Toronto building permits: {count} rows loaded")
+
+
+@cli.command("load-vancouver")
+def load_vancouver():
+    """Load Vancouver crime incidents from Open Data API."""
+    from app.loaders.vancouver import load_crime_incidents
+
+    logger = logging.getLogger(__name__)
+    logger.info("Loading Vancouver crime incidents...")
+    count = load_crime_incidents()
+    click.echo(f"Vancouver crime incidents: {count} rows loaded")
+
+
+@cli.command("load-calgary")
+def load_calgary():
+    """Load Calgary crime incidents and building permits from SODA API."""
+    from app.loaders.calgary import load_building_permits, load_crime_incidents
+
+    logger = logging.getLogger(__name__)
+    logger.info("Loading Calgary data...")
+    crime_count = load_crime_incidents()
+    permit_count = load_building_permits()
+    total = crime_count + permit_count
+    click.echo(
+        f"Calgary data: {crime_count} crime + {permit_count} permits "
+        f"= {total} rows loaded"
+    )
+
+
+@cli.command("load-government")
+def load_government():
+    """Load federal government contracts from Open Canada CKAN."""
+    from app.loaders.government import load_government_contracts
+
+    logger = logging.getLogger(__name__)
+    logger.info("Loading government contracts...")
+    count = load_government_contracts()
+    click.echo(f"Government contracts: {count} rows loaded")
 
 
 @cli.command()
 def geo():
-    """Load geographic boundary files."""
+    """Load geographic boundary files and climate station metadata."""
+    from app.loaders.boundaries import load_boundaries
+    from app.loaders.climate_stations import load_climate_stations
+
     logger = logging.getLogger(__name__)
+
     logger.info("Loading geographic boundaries...")
-    click.echo("Geo loader: not yet implemented")
+    boundary_results = load_boundaries()
+    for layer, count in boundary_results.items():
+        click.echo(f"  {layer}: {count} features loaded")
+
+    logger.info("Loading climate station metadata...")
+    station_count = load_climate_stations()
+    click.echo(f"  climate_stations: {station_count} stations loaded")
 
 
 @cli.command()
