@@ -1,0 +1,284 @@
+{
+  "uid": "cdo-transit",
+  "title": "Transit and GTFS",
+  "description": "Canadian public transit data from GTFS feeds across 6 major cities",
+  "tags": ["cdo", "transit", "gtfs", "canada"],
+  "timezone": "America/Toronto",
+  "editable": true,
+  "refresh": "24h",
+  "time": {
+    "from": "now-1y",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "city",
+        "type": "custom",
+        "label": "City",
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": ["$__all"] },
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "Toronto", "value": "Toronto", "selected": false },
+          { "text": "Vancouver", "value": "Vancouver", "selected": false },
+          { "text": "Montreal", "value": "Montreal", "selected": false },
+          { "text": "Calgary", "value": "Calgary", "selected": false },
+          { "text": "Ottawa", "value": "Ottawa", "selected": false },
+          { "text": "Edmonton", "value": "Edmonton", "selected": false }
+        ],
+        "query": "Toronto,Vancouver,Montreal,Calgary,Ottawa,Edmonton"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Transit Stops Map",
+      "description": "All transit stops from GTFS feeds plotted on map (PostGIS Point geometry)",
+      "type": "geomap",
+      "gridPos": { "h": 16, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT stop_name, city, stop_lat AS latitude, stop_lon AS longitude FROM transit.stops WHERE city IN ($__singleQuote{city:csv}) AND stop_lat IS NOT NULL AND stop_lon IS NOT NULL LIMIT 10000",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "view": {
+          "id": "coords",
+          "lat": 49,
+          "lon": -97,
+          "zoom": 4
+        },
+        "basemap": {
+          "type": "default"
+        },
+        "layers": [
+          {
+            "type": "markers",
+            "name": "Stops",
+            "config": {
+              "style": {
+                "size": {
+                  "fixed": 3
+                },
+                "color": {
+                  "field": "city",
+                  "fixed": "semi-dark-blue"
+                },
+                "opacity": 0.6,
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg"
+                }
+              }
+            },
+            "tooltip": true,
+            "location": {
+              "mode": "auto"
+            }
+          }
+        ],
+        "tooltip": { "mode": "details" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Route Coverage by City",
+      "description": "Total number of transit routes per city",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT city, COUNT(*) AS route_count FROM transit.routes WHERE city IN ($__singleQuote{city:csv}) GROUP BY city ORDER BY route_count DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "orange", "value": 200 },
+              { "color": "red", "value": 400 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "always",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "xField": "city",
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Stops by City",
+      "description": "Total number of transit stops per city",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT city, COUNT(*) AS stop_count FROM transit.stops WHERE city IN ($__singleQuote{city:csv}) GROUP BY city ORDER BY stop_count DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2000 },
+              { "color": "orange", "value": 5000 },
+              { "color": "red", "value": 10000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "vertical",
+        "showValue": "always",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "xField": "city",
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Route Types Distribution",
+      "description": "Distribution of route types (bus, subway, tram, etc.) by city",
+      "type": "piechart",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT CASE route_type WHEN 0 THEN 'Tram/Light Rail' WHEN 1 THEN 'Subway/Metro' WHEN 2 THEN 'Rail' WHEN 3 THEN 'Bus' WHEN 4 THEN 'Ferry' WHEN 5 THEN 'Cable Tram' WHEN 6 THEN 'Gondola' WHEN 7 THEN 'Funicular' ELSE 'Other' END AS route_type_name, COUNT(*) AS count FROM transit.routes WHERE city IN ($__singleQuote{city:csv}) GROUP BY route_type ORDER BY count DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/count/",
+          "values": true
+        },
+        "pieType": "donut",
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Service Coverage",
+      "description": "Summary table of routes and stops by city",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "postgres" },
+      "targets": [
+        {
+          "rawSql": "SELECT r.city, r.route_count, s.stop_count FROM (SELECT city, COUNT(*) AS route_count FROM transit.routes GROUP BY city) r JOIN (SELECT city, COUNT(*) AS stop_count FROM transit.stops GROUP BY city) s ON r.city = s.city WHERE r.city IN ($__singleQuote{city:csv}) ORDER BY r.route_count DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "city" },
+            "properties": [
+              { "id": "displayName", "value": "City" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "route_count" },
+            "properties": [
+              { "id": "displayName", "value": "Routes" }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "stop_count" },
+            "properties": [
+              { "id": "displayName", "value": "Stops" }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Routes", "desc": true }],
+        "footer": {
+          "show": true,
+          "reducer": ["sum"],
+          "fields": ["route_count", "stop_count"]
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

@@ -42,9 +42,31 @@ def weather():
 @cli.command()
 def transit():
     """Load transit data from GTFS feeds."""
+    from app.loaders.transit import load_transit
+
     logger = logging.getLogger(__name__)
     logger.info("Loading transit GTFS data...")
-    click.echo("Transit loader: not yet implemented")
+    results = load_transit()
+    total_stops = sum(r["stops"] for r in results.values())
+    total_routes = sum(r["routes"] for r in results.values())
+    for city, counts in results.items():
+        click.echo(f"  {city}: {counts['stops']} stops, {counts['routes']} routes")
+    click.echo(f"Transit loaded: {total_stops} stops, {total_routes} routes across {len(results)} cities")
+
+
+@cli.command("load-transit")
+def load_transit_cmd():
+    """Load transit GTFS feeds for all 6 Canadian cities."""
+    from app.loaders.transit import load_transit
+
+    logger = logging.getLogger(__name__)
+    logger.info("Loading transit GTFS data...")
+    results = load_transit()
+    total_stops = sum(r["stops"] for r in results.values())
+    total_routes = sum(r["routes"] for r in results.values())
+    for city, counts in results.items():
+        click.echo(f"  {city}: {counts['stops']} stops, {counts['routes']} routes")
+    click.echo(f"Transit loaded: {total_stops} stops, {total_routes} routes across {len(results)} cities")
 
 
 @cli.command()
